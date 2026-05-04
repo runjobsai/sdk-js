@@ -47,6 +47,7 @@ export type {
   ImageResponse,
   ImageEditParams,
   ImageFileInput,
+  AsyncImageJob,
 } from "./image.js";
 
 // Audio
