@@ -10,20 +10,41 @@ import { APIError } from "./errors.js";
  */
 export interface TransportOptions {
   baseURL: string;
-  apiKey: string;
+  /** Static bearer token. Required unless `apiKeyResolver` is supplied. */
+  apiKey?: string;
+  /** Dynamic resolver — called immediately before each request. Use this
+   *  when the token is short-lived and refreshed externally (e.g. running
+   *  inside a runjobs resource bundle that exposes
+   *  `window.runjobs.getToken()`). The result is awaited per request, so
+   *  the caller can return a Promise that hits a token endpoint. Wins
+   *  over `apiKey` when both are supplied. */
+  apiKeyResolver?: () => string | Promise<string>;
   /** Optional fetch override (e.g. node-fetch with custom agent). */
   fetchImpl?: typeof fetch;
 }
 
 export class Transport {
   readonly baseURL: string;
-  readonly apiKey: string;
+  private readonly apiKey: string | undefined;
+  private readonly apiKeyResolver: (() => string | Promise<string>) | undefined;
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: TransportOptions) {
+    if (!opts.apiKey && !opts.apiKeyResolver) {
+      throw new Error(
+        "RunJobs: pass either `apiKey` or `apiKeyResolver` when constructing the client",
+      );
+    }
     this.baseURL = opts.baseURL.replace(/\/+$/, "");
     this.apiKey = opts.apiKey;
+    this.apiKeyResolver = opts.apiKeyResolver;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+  }
+
+  /** Resolve the bearer token for the next request. */
+  private async resolveToken(): Promise<string> {
+    if (this.apiKeyResolver) return await this.apiKeyResolver();
+    return this.apiKey ?? "";
   }
 
   /** POST JSON body; parse JSON response. */
@@ -34,7 +55,7 @@ export class Transport {
   ): Promise<T> {
     const resp = await this.fetchImpl(this.baseURL + path, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: await this.jsonHeaders(),
       body: JSON.stringify(body),
       signal: init?.signal,
     });
@@ -51,7 +72,7 @@ export class Transport {
   ): Promise<T> {
     const resp = await this.fetchImpl(this.baseURL + path, {
       method: "GET",
-      headers: this.authHeaders(),
+      headers: await this.authHeaders(),
       signal: init?.signal,
     });
     if (!resp.ok) {
@@ -67,7 +88,7 @@ export class Transport {
   ): Promise<{ data: Uint8Array; contentType: string }> {
     const resp = await this.fetchImpl(this.baseURL + path, {
       method: "GET",
-      headers: this.authHeaders(),
+      headers: await this.authHeaders(),
       signal: init?.signal,
     });
     if (!resp.ok) {
@@ -86,7 +107,7 @@ export class Transport {
   ): Promise<T> {
     const resp = await this.fetchImpl(this.baseURL + path, {
       method: "POST",
-      headers: this.authHeaders(), // do NOT set Content-Type — fetch sets it with boundary
+      headers: await this.authHeaders(), // do NOT set Content-Type — fetch sets it with boundary
       body: form,
       signal: init?.signal,
     });
@@ -108,7 +129,7 @@ export class Transport {
     const resp = await this.fetchImpl(this.baseURL + path, {
       method: "POST",
       headers: {
-        ...this.jsonHeaders(),
+        ...(await this.jsonHeaders()),
         "Accept-Encoding": "identity", // SSE lines arrive immediately, no gzip
       },
       body: JSON.stringify(body),
@@ -120,15 +141,15 @@ export class Transport {
     return resp;
   }
 
-  private jsonHeaders(): Record<string, string> {
+  private async jsonHeaders(): Promise<Record<string, string>> {
     return {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${this.apiKey}`,
+      Authorization: `Bearer ${await this.resolveToken()}`,
     };
   }
 
-  private authHeaders(): Record<string, string> {
-    return { Authorization: `Bearer ${this.apiKey}` };
+  private async authHeaders(): Promise<Record<string, string>> {
+    return { Authorization: `Bearer ${await this.resolveToken()}` };
   }
 
   private async parseError(resp: Response): Promise<APIError> {

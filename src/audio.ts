@@ -24,7 +24,10 @@ export interface VoiceCatalog {
 
 export interface SpeechParams {
   input: string;
-  voice: string;
+  /** Named voice id (`alloy`, `nova`, …; provider-dependent). Omit
+   *  when supplying `reference_audio_url` for zero-shot voice
+   *  cloning — the cloned timbre overrides any named voice. */
+  voice?: string;
   response_format?: string;
   speed?: number;
   /** Provider-specific; see `VoiceCatalog.supported_emotions`. */

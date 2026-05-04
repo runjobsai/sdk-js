@@ -9,8 +9,34 @@ import { ComputerService } from "./computer.js";
 const DEFAULT_BASE_URL = "https://api.runjobs.ai";
 
 export interface ClientOptions {
-  /** Gateway API key (typically prefixed `gw-`). Required. */
-  apiKey: string;
+  /** Static gateway API key (typically prefixed `gw-` / `rj_` / `rrt_`).
+   *  Required unless `apiKeyResolver` is supplied. */
+  apiKey?: string;
+  /**
+   * Dynamic API key resolver. Use this when the bearer token is
+   * short-lived and refreshed externally — e.g. running inside a
+   * runjobs resource bundle that exposes
+   * `https://www.runjobs.ai/api/auth.js`:
+   *
+   * ```html
+   * <script src="https://www.runjobs.ai/api/auth.js"></script>
+   * <script type="module">
+   *   import { RunJobs } from "@runjobsai/sdk";
+   *   const client = new RunJobs({
+   *     apiKeyResolver: () => window.runjobs.getToken(),
+   *     baseURL: "https://www.runjobs.ai",
+   *   });
+   * </script>
+   * ```
+   *
+   * The resolver is awaited before EVERY request, so the caller is
+   * free to return a Promise that hits a token endpoint. The auth.js
+   * bridge caches its token internally; calls back-to-back are
+   * sub-millisecond.
+   *
+   * Wins over `apiKey` when both are supplied.
+   */
+  apiKeyResolver?: () => string | Promise<string>;
   /** Override the default gateway base URL. Defaults to `https://api.runjobs.ai`. */
   baseURL?: string;
   /** Optional fetch override (e.g. node-fetch with custom agent). */
@@ -41,12 +67,15 @@ export class RunJobs {
   readonly computer: ComputerService;
 
   constructor(options: ClientOptions) {
-    if (!options.apiKey) {
-      throw new Error("runjobs: apiKey is required");
+    if (!options.apiKey && !options.apiKeyResolver) {
+      throw new Error("runjobs: pass either `apiKey` or `apiKeyResolver`");
     }
     const transport = new Transport({
       baseURL: options.baseURL ?? DEFAULT_BASE_URL,
-      apiKey: options.apiKey,
+      ...(options.apiKey !== undefined && { apiKey: options.apiKey }),
+      ...(options.apiKeyResolver !== undefined && {
+        apiKeyResolver: options.apiKeyResolver,
+      }),
       ...(options.fetch ? { fetchImpl: options.fetch } : {}),
     });
     this.chat = new ChatService(transport);

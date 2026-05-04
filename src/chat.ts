@@ -17,10 +17,19 @@ export interface ChatMessage {
   tool_calls?: ChatToolCall[];
 }
 
-/** One block inside a multi-modal message content array. */
+/** One block inside a multi-modal message content array.
+ *
+ * Multi-modal LLMs see content as a heterogeneous list — some mix
+ * text + images (gpt-4o, claude), some accept video frames or raw
+ * audio (Gemini 2.x). The shape mirrors OpenAI's chat completions
+ * schema and is forwarded verbatim to the gateway; unsupported
+ * variants are rejected server-side with a clear error rather than
+ * silently ignored. */
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } };
+  | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }
+  | { type: "video_url"; video_url: { url: string } }
+  | { type: "audio_url"; audio_url: { url: string } };
 
 export interface ChatTool {
   type: "function";
