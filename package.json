@@ -1,0 +1,51 @@
+{
+  "name": "@runjobsai/sdk",
+  "version": "0.1.0",
+  "description": "JavaScript / TypeScript client for the RunJobs AI Gateway",
+  "license": "MIT",
+  "author": "RunJobs",
+  "homepage": "https://github.com/runjobsai/sdk-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runjobsai/sdk-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/runjobsai/sdk-js/issues"
+  },
+  "keywords": [
+    "runjobs",
+    "ai",
+    "llm",
+    "gateway",
+    "sdk",
+    "openai-compatible"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}
