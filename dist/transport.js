@@ -11,7 +11,13 @@ export class Transport {
         this.baseURL = opts.baseURL.replace(/\/+$/, "");
         this.apiKey = opts.apiKey;
         this.apiKeyResolver = opts.apiKeyResolver;
-        this.fetchImpl = opts.fetchImpl ?? fetch;
+        // Bind to globalThis when using the platform's native fetch.
+        // Without binding, `this.fetchImpl(...)` invokes with `this`
+        // pointing at the Transport instance, and the browser's
+        // `Window.fetch` rejects that with "Illegal invocation".
+        // Caller-supplied `fetchImpl` is used as-is — they're responsible
+        // for any binding their wrapper needs.
+        this.fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
     }
     /** Resolve the bearer token for the next request. */
     async resolveToken() {
