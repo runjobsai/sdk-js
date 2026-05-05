@@ -12,7 +12,6 @@ export interface BrowserAuthOptions {
 export interface BrowserUser {
     id?: string;
     name?: string;
-    avatar_url?: string;
 }
 /**
  * BrowserAuth encapsulates the browser-side auth state for a RunJobs
@@ -20,7 +19,7 @@ export interface BrowserUser {
  *
  *   - getToken()       fresh bearer (auto-refreshes / signs in)
  *   - signIn()         force a redirect to the grant page
- *   - user             { id, name, avatar_url } — null until signed in
+ *   - user             { id, name } — null until signed in
  *   - onTokenChange(fn) subscribe to token (re)acquisition
  *
  * Construct once per page; the SDK passes its `getToken` as the

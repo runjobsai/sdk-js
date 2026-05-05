@@ -28,7 +28,7 @@ const STORAGE_KEY = "__runjobs_auth_v1__";
  *
  *   - getToken()       fresh bearer (auto-refreshes / signs in)
  *   - signIn()         force a redirect to the grant page
- *   - user             { id, name, avatar_url } — null until signed in
+ *   - user             { id, name } — null until signed in
  *   - onTokenChange(fn) subscribe to token (re)acquisition
  *
  * Construct once per page; the SDK passes its `getToken` as the
@@ -333,25 +333,14 @@ export class BrowserAuth {
                 "overflow:hidden",
             ].join(";");
             const u = this.userInfo;
-            let avatar;
-            if (u.avatar_url) {
-                const img = document.createElement("img");
-                img.src = u.avatar_url;
-                img.alt = "";
-                img.style.cssText =
-                    "width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0";
-                avatar = img;
-            }
-            else {
-                avatar = document.createElement("div");
-                avatar.textContent = (u.name || "?").charAt(0).toUpperCase();
-                avatar.style.cssText = [
-                    "width:22px;height:22px;border-radius:50%;flex-shrink:0",
-                    "display:flex;align-items:center;justify-content:center",
-                    "background:linear-gradient(135deg,#3b82f6,#8b5cf6)",
-                    "font-size:11px;font-weight:600;color:#fff",
-                ].join(";");
-            }
+            const avatar = document.createElement("div");
+            avatar.textContent = (u.name || "?").charAt(0).toUpperCase();
+            avatar.style.cssText = [
+                "width:22px;height:22px;border-radius:50%;flex-shrink:0",
+                "display:flex;align-items:center;justify-content:center",
+                "background:linear-gradient(135deg,#3b82f6,#8b5cf6)",
+                "font-size:11px;font-weight:600;color:#fff",
+            ].join(";");
             const name = document.createElement("span");
             name.textContent = u.name || "Signed in";
             name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
