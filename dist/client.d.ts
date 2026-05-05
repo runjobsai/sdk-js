@@ -85,6 +85,14 @@ export declare class RunJobs {
     /** Force a redirect to the runjobs.ai grant page.  No-op in static
      *  auth mode or in Node. */
     signIn(): void;
+    /**
+     * Clear the cached token + identity from memory and localStorage.
+     * The next API call will trigger sign-in again (redirect to grant
+     * page).  Wire this to a "Sign out" button in your settings UI.
+     *
+     * No-op in static auth mode or in Node.
+     */
+    signOut(): void;
     /** Currently-authenticated user (runjobs auth mode), or null. */
     get user(): BrowserUser | null;
 }

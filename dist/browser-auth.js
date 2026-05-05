@@ -21,6 +21,7 @@
 // window.opener relationship for cross-origin popups, so popup-based
 // grant flows silently lose their postMessage replies.
 const TOKEN_REFRESH_MARGIN_S = 60;
+const STORAGE_KEY = "__runjobs_auth_v1__";
 /**
  * BrowserAuth encapsulates the browser-side auth state for a RunJobs
  * client.  Exposes:
@@ -47,17 +48,28 @@ export class BrowserAuth {
         this.hideBadge = !!opts.hideBadge;
         if (typeof window === "undefined")
             return;
+        // Restore from localStorage (survives page reloads).  We pin the
+        // saved token to the gateway origin: a bundle that switches
+        // between dev / prod gateways shouldn't accidentally reuse the
+        // previous one's token.
+        this.loadPersisted();
         // Eager: install token from the URL fragment if the grant page
-        // just redirected us back here.  This must happen synchronously
-        // BEFORE any first SDK call, otherwise the call sees no token and
-        // triggers a (now redundant) redirect.
+        // just redirected us back here.  This always WINS over a
+        // localStorage-cached token because a fresh redirect implies the
+        // user just (re)authenticated and the old cache may be stale.
         this.consumeFragment();
-        if (this.inIframe()) {
+        if (this.inIframe() && !this.tokenIsFresh()) {
             // Best-effort parent handshake — silent if it succeeds, falls
             // through to the standard fragment / redirect path otherwise.
             this.parentHandshake = this.requestTokenFromParent().catch(() => {
                 /* dashboard parent unavailable; will redirect on next call */
             });
+        }
+        else if (this.tokenIsFresh() && this.userInfo && !this.hideBadge) {
+            // Restored from cache — render the badge so the user can see
+            // they're already signed in (and find the sign-out affordance
+            // their bundle author exposed).
+            this.renderBadge();
         }
     }
     /** Public token-fetcher; pass to RunJobs as `apiKeyResolver`. */
@@ -87,6 +99,25 @@ export class BrowserAuth {
     /** Currently-authenticated user, or null. */
     get user() {
         return this.userInfo;
+    }
+    /**
+     * Clear the cached token / user / badge and the persisted copy in
+     * localStorage.  Next gateway call will trigger a redirect to the
+     * grant page — i.e. the standard sign-in flow.  Wire this to a
+     * "Sign out" button in the bundle's settings UI.
+     *
+     * Does NOT redirect on its own; the bundle decides whether to
+     * also navigate the user (e.g. to a logged-out splash page) or
+     * just refresh state and let the next API call re-prompt.
+     */
+    signOut() {
+        this.token = null;
+        this.expiresAt = 0;
+        this.userInfo = null;
+        this.parentHandshake = null;
+        this.signingIn = false;
+        this.clearPersisted();
+        this.removeBadge();
     }
     /** Force a redirect to the grant page. */
     signIn() {
@@ -132,6 +163,7 @@ export class BrowserAuth {
             if (!this.hideBadge)
                 this.renderBadge();
         }
+        this.savePersisted();
         for (const fn of this.listeners) {
             try {
                 fn(token);
@@ -140,6 +172,65 @@ export class BrowserAuth {
                 console.warn("[runjobs] onTokenChange handler threw", err);
             }
         }
+    }
+    savePersisted() {
+        if (typeof localStorage === "undefined" || !this.token)
+            return;
+        try {
+            const data = {
+                token: this.token,
+                expiresAt: this.expiresAt,
+                origin: this.origin,
+                ...(this.userInfo ? { user: this.userInfo } : {}),
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+        catch {
+            /* quota / private mode — degrade to in-memory only */
+        }
+    }
+    loadPersisted() {
+        if (typeof localStorage === "undefined")
+            return;
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw)
+                return;
+            const data = JSON.parse(raw);
+            if (!data.token || !data.origin)
+                return;
+            // Pin to the gateway origin we were constructed with — a bundle
+            // talking to a different gateway shouldn't reuse this token.
+            if (data.origin !== this.origin)
+                return;
+            // Already expired?  Drop it; next call will redirect to grant.
+            if (typeof data.expiresAt === "number" && data.expiresAt > 0 &&
+                this.nowSec() >= data.expiresAt - TOKEN_REFRESH_MARGIN_S) {
+                this.clearPersisted();
+                return;
+            }
+            this.token = data.token;
+            this.expiresAt = data.expiresAt ?? 0;
+            if (data.user)
+                this.userInfo = data.user;
+        }
+        catch {
+            /* corrupted blob — drop it */
+            this.clearPersisted();
+        }
+    }
+    clearPersisted() {
+        if (typeof localStorage === "undefined")
+            return;
+        try {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+        catch { /* ignore */ }
+    }
+    removeBadge() {
+        if (typeof document === "undefined")
+            return;
+        document.getElementById("__runjobs_identity__")?.remove();
     }
     /** Parse the #runjobs_token=… fragment, install, then strip it. */
     consumeFragment() {

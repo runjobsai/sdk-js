@@ -85,6 +85,16 @@ export class RunJobs {
     signIn() {
         this.auth?.signIn();
     }
+    /**
+     * Clear the cached token + identity from memory and localStorage.
+     * The next API call will trigger sign-in again (redirect to grant
+     * page).  Wire this to a "Sign out" button in your settings UI.
+     *
+     * No-op in static auth mode or in Node.
+     */
+    signOut() {
+        this.auth?.signOut();
+    }
     /** Currently-authenticated user (runjobs auth mode), or null. */
     get user() {
         return this.auth?.user ?? null;
