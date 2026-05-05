@@ -26,11 +26,14 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "unpkg": "./dist/sdk.umd.js",
+  "jsdelivr": "./dist/sdk.umd.js",
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./browser": "./dist/sdk.umd.js"
   },
   "files": [
     "dist",
@@ -39,7 +42,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsup",
     "clean": "rm -rf dist",
     "prepare": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run clean && npm run build",
@@ -47,6 +50,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.5.0"
   }
 }

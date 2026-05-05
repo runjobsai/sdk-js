@@ -6,7 +6,8 @@
  * reaching into per-service modules.
  */
 
-export { RunJobs, type ClientOptions } from "./client.js";
+export { RunJobs, RunJobs as Client, type ClientOptions, type AuthProvider } from "./client.js";
+export { BrowserAuth, type BrowserAuthOptions, type BrowserUser } from "./browser-auth.js";
 export { APIError } from "./errors.js";
 export type { Usage } from "./types.js";
 
