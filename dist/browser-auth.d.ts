@@ -61,6 +61,9 @@ export declare class BrowserAuth {
     private savePersisted;
     private loadPersisted;
     private clearPersisted;
+    private isSignedOut;
+    private markSignedOut;
+    private clearSignedOut;
     private removeBadge;
     /** Parse the #runjobs_token=… fragment, install, then strip it. */
     private consumeFragment;

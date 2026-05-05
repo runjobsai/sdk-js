@@ -40,6 +40,12 @@ export interface BrowserUser {
 
 const TOKEN_REFRESH_MARGIN_S = 60;
 const STORAGE_KEY = "__runjobs_auth_v1__";
+// Set when the user clicks "Sign out".  While present, getToken() must
+// not silently redirect to the grant page even though the user still
+// has a runjobs.ai cookie — otherwise the backend's auto-grant turns
+// every page reload into a re-authentication.  Cleared on explicit
+// signIn() so the user can come back.
+const SIGNED_OUT_KEY = "__runjobs_signed_out_v1__";
 
 interface PersistedAuth {
   token: string;
@@ -85,9 +91,16 @@ export class BrowserAuth {
     // just redirected us back here.  This always WINS over a
     // localStorage-cached token because a fresh redirect implies the
     // user just (re)authenticated and the old cache may be stale.
-    this.consumeFragment();
+    // A successful fragment install also clears the "signed out"
+    // sticky flag — the user explicitly signed in again.
+    if (this.consumeFragment()) {
+      this.clearSignedOut();
+    }
 
-    if (this.inIframe() && !this.tokenIsFresh()) {
+    if (this.isSignedOut()) {
+      // Honour the user's explicit sign-out across reloads.  Don't
+      // attempt parent handshake or render the badge.
+    } else if (this.inIframe() && !this.tokenIsFresh()) {
       // Best-effort parent handshake — silent if it succeeds, falls
       // through to the standard fragment / redirect path otherwise.
       this.parentHandshake = this.requestTokenFromParent().catch(() => {
@@ -107,6 +120,14 @@ export class BrowserAuth {
     if (this.parentHandshake) {
       await this.parentHandshake;
       if (this.tokenIsFresh()) return this.token as string;
+    }
+    // User explicitly signed out — don't silently re-auth.  Throw so
+    // the caller surfaces an unauthenticated state and can prompt the
+    // user to click signIn.  Without this guard, the backend's
+    // auto-grant flow would re-issue a token on every page reload
+    // (the cookie on the gateway domain is still valid).
+    if (this.isSignedOut()) {
+      throw new Error("RunJobs: signed out — call client.signIn() to authenticate");
     }
     // No fresh token + can't get one silently → redirect to grant.
     // The page is about to unload; return a never-resolving Promise so
@@ -146,12 +167,16 @@ export class BrowserAuth {
     this.parentHandshake = null;
     this.signingIn = false;
     this.clearPersisted();
+    this.markSignedOut();
     this.removeBadge();
   }
 
   /** Force a redirect to the grant page. */
   signIn(): void {
     if (typeof window === "undefined" || this.signingIn) return;
+    // Explicit signIn clears the "signed out" flag so getToken() can
+    // proceed with the redirect-grant flow.
+    this.clearSignedOut();
     this.signingIn = true;
     const ret = location.href.split("#")[0] ?? location.href;
     const scheme = window.matchMedia?.("(prefers-color-scheme: dark)")
@@ -250,6 +275,27 @@ export class BrowserAuth {
     if (typeof localStorage === "undefined") return;
     try {
       localStorage.removeItem(STORAGE_KEY);
+    } catch { /* ignore */ }
+  }
+
+  private isSignedOut(): boolean {
+    if (typeof localStorage === "undefined") return false;
+    try {
+      return localStorage.getItem(SIGNED_OUT_KEY) === "1";
+    } catch { return false; }
+  }
+
+  private markSignedOut() {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(SIGNED_OUT_KEY, "1");
+    } catch { /* ignore */ }
+  }
+
+  private clearSignedOut() {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.removeItem(SIGNED_OUT_KEY);
     } catch { /* ignore */ }
   }
 
