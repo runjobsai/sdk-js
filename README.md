@@ -120,12 +120,17 @@ const edited = await client.image.edit("GPT Image", {
 ### Text-to-Speech & Speech-to-Text
 
 ```ts
-// List voices and supported emotions
-const catalog = await client.audio.listVoices("MiniMax Speech 2.6 HD");
-for (const v of catalog.voices) {
+// Voice metadata (id, name, gender, preview_url, supported_emotions) is
+// carried on the model row itself — fetch via models.get and read off
+// the options bag.
+const m = await client.models.get("MiniMax Speech 2.6 HD");
+const voices = (m.options?.voices ?? []) as Array<{
+  id: string; name: string; gender?: string; language?: string;
+}>;
+for (const v of voices) {
   console.log(`${v.id}  ${v.name}  ${v.gender ?? ""}  ${v.language ?? ""}`);
 }
-console.log("Emotions:", catalog.supported_emotions);
+console.log("Emotions:", m.options?.supported_emotions);
 // e.g. ["happy", "sad", "angry", "fearful", "disgusted", "surprised", "calm", "whisper"]
 
 // TTS (basic)
@@ -247,7 +252,7 @@ const resp = await client.chat.create(
 | `client.chat`    | `create`, `stream`                             | OpenAI-compatible chat completions           |
 | `client.models`  | `list`                                         | Model catalog with pricing and capabilities  |
 | `client.image`   | `generate`, `edit`, `generateAsync`            | Image generation and editing                 |
-| `client.audio`   | `listVoices`, `speech`, `transcribe`           | Voice catalog, text-to-speech, transcription |
+| `client.audio`   | `speech`, `transcribe`                         | Text-to-speech and transcription (voice catalog now on the model row via `models.get`) |
 | `client.video`   | `generate`, `getStatus`, `wait`, `getContent`  | Async video generation                       |
 | `client.computer`| `step`                                         | Computer use (AI GUI control)                |
 

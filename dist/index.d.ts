@@ -14,7 +14,7 @@ export { userMessage, systemMessage, assistantMessage, toolResultMessage, userMe
 export type { Model, ModelListOptions } from "./models.js";
 export { supportsVoiceClone, supportsInstructText, defaultVoice } from "./models.js";
 export type { ImageGenerateParams, ImageResult, ImageUsage, ImageResponse, ImageEditParams, ImageFileInput, AsyncImageJob, } from "./image.js";
-export type { Voice, VoiceCatalog, SpeechParams, SpeechResponse, TranscribeParams, TranscribeResponse, AudioFileInput, } from "./audio.js";
+export type { SpeechParams, SpeechResponse, TranscribeParams, TranscribeResponse, AudioFileInput, } from "./audio.js";
 export type { VideoGenerateParams, VideoTask, VideoStatus, VideoUsageTokens, WaitOptions, } from "./video.js";
 export type { ComputerStepParams, ComputerContentBlock, ComputerResponse, } from "./computer.js";
 //# sourceMappingURL=index.d.ts.map

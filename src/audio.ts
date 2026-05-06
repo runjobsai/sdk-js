@@ -2,24 +2,15 @@ import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
 
 /* ------------------------------------------------------------------ */
-/* Voices                                                              */
-/* ------------------------------------------------------------------ */
-
-export interface Voice {
-  id: string;
-  name: string;
-  gender?: string;
-  language?: string;
-}
-
-export interface VoiceCatalog {
-  voices: Voice[];
-  /** e.g. ["happy","sad","angry","fearful","disgusted","surprised","calm","whisper"] */
-  supported_emotions?: string[];
-}
-
-/* ------------------------------------------------------------------ */
 /* TTS                                                                 */
+/* ------------------------------------------------------------------ */
+/*                                                                     */
+/* Voice metadata (id / name / gender / preview_url / supported        */
+/* emotions) is no longer fetched through a dedicated endpoint —       */
+/* every text_to_speech row on /v1/models carries its full catalog     */
+/* under `options.voices` and `options.supported_emotions`. Use        */
+/* `client.models.get(name)` (or the entry from `client.models.list`)  */
+/* and read those fields off `model.options`.                          */
 /* ------------------------------------------------------------------ */
 
 export interface SpeechParams {
@@ -30,7 +21,9 @@ export interface SpeechParams {
   voice?: string;
   response_format?: string;
   speed?: number;
-  /** Provider-specific; see `VoiceCatalog.supported_emotions`. */
+  /** Provider-specific. Inspect the chosen TTS model's
+   *  `options.supported_emotions` (via `client.models.get(name)`) for
+   *  the legal enum values. */
   emotion?: string;
   /** -12 … 12 semitones (provider-dependent). */
   pitch?: number;
@@ -96,14 +89,9 @@ export interface TranscribeResponse {
 export class AudioService {
   constructor(private readonly transport: Transport) {}
 
-  /** List voices + supported emotions for a TTS model. */
-  async listVoices(
-    model: string,
-    init?: { signal?: AbortSignal },
-  ): Promise<VoiceCatalog> {
-    const path = `/v1/audio/voices?model=${encodeURIComponent(model)}`;
-    return this.transport.getJSON<VoiceCatalog>(path, init);
-  }
+  // (Removed: listVoices — fetch voice metadata via client.models.get /
+  //  client.models.list and read model.options.voices /
+  //  model.options.supported_emotions.)
 
   /**
    * Generate speech from text. Output bytes are base64-decoded by the SDK

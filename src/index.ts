@@ -53,8 +53,6 @@ export type {
 
 // Audio
 export type {
-  Voice,
-  VoiceCatalog,
   SpeechParams,
   SpeechResponse,
   TranscribeParams,

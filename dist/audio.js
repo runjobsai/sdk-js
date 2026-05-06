@@ -6,11 +6,9 @@ export class AudioService {
     constructor(transport) {
         this.transport = transport;
     }
-    /** List voices + supported emotions for a TTS model. */
-    async listVoices(model, init) {
-        const path = `/v1/audio/voices?model=${encodeURIComponent(model)}`;
-        return this.transport.getJSON(path, init);
-    }
+    // (Removed: listVoices — fetch voice metadata via client.models.get /
+    //  client.models.list and read model.options.voices /
+    //  model.options.supported_emotions.)
     /**
      * Generate speech from text. Output bytes are base64-decoded by the SDK
      * — `response.data` is a `Uint8Array` you can write directly to disk:

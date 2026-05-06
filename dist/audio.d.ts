@@ -1,16 +1,5 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
-export interface Voice {
-    id: string;
-    name: string;
-    gender?: string;
-    language?: string;
-}
-export interface VoiceCatalog {
-    voices: Voice[];
-    /** e.g. ["happy","sad","angry","fearful","disgusted","surprised","calm","whisper"] */
-    supported_emotions?: string[];
-}
 export interface SpeechParams {
     input: string;
     /** Named voice id (`alloy`, `nova`, …; provider-dependent). Omit
@@ -19,7 +8,9 @@ export interface SpeechParams {
     voice?: string;
     response_format?: string;
     speed?: number;
-    /** Provider-specific; see `VoiceCatalog.supported_emotions`. */
+    /** Provider-specific. Inspect the chosen TTS model's
+     *  `options.supported_emotions` (via `client.models.get(name)`) for
+     *  the legal enum values. */
     emotion?: string;
     /** -12 … 12 semitones (provider-dependent). */
     pitch?: number;
@@ -72,10 +63,6 @@ export interface TranscribeResponse {
 export declare class AudioService {
     private readonly transport;
     constructor(transport: Transport);
-    /** List voices + supported emotions for a TTS model. */
-    listVoices(model: string, init?: {
-        signal?: AbortSignal;
-    }): Promise<VoiceCatalog>;
     /**
      * Generate speech from text. Output bytes are base64-decoded by the SDK
      * — `response.data` is a `Uint8Array` you can write directly to disk:
