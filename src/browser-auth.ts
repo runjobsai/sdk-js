@@ -31,6 +31,27 @@ export interface BrowserAuthOptions {
    * Suppress the floating identity badge.  Default `false`.
    */
   hideBadge?: boolean;
+  /**
+   * Pin the grant flow to a named runjobs.ai project.  When set, the
+   * SDK passes `project_id=<value>` to `/api/sdk/grant`, asking the
+   * gateway to mint a project-bound `rrt_*` resource token for THAT
+   * project regardless of which (origin, app) pair the bundle is
+   * served from.
+   *
+   * Use cases:
+   *   - **Local dev** for a 1:1 bundle/project app: the localhost
+   *     origin isn't registered with any project, so without this
+   *     option the grant flow can't pick one and `client.files` 403s
+   *     on every call.  Pin the project explicitly and `pnpm dev`
+   *     hits the same files namespace as production.
+   *   - **Multi-tenant bundles** that let the user pick a project at
+   *     runtime — pass the chosen project id, then call `signOut()` +
+   *     `signIn()` (or reconstruct the client) on switch.
+   *
+   * Omit to keep the default behaviour: the gateway derives the
+   * project from the registered (origin, app) pair.
+   */
+  project?: string;
 }
 
 export interface BrowserUser {
@@ -69,6 +90,7 @@ interface PersistedAuth {
 export class BrowserAuth {
   private readonly origin: string;
   private readonly hideBadge: boolean;
+  private readonly project: string | null;
   private token: string | null = null;
   private expiresAt = 0;
   private userInfo: BrowserUser | null = null;
@@ -79,6 +101,7 @@ export class BrowserAuth {
   constructor(opts: BrowserAuthOptions = {}) {
     this.origin = (opts.origin ?? "https://www.runjobs.ai").replace(/\/$/, "");
     this.hideBadge = !!opts.hideBadge;
+    this.project = opts.project ?? null;
     if (typeof window === "undefined") return;
 
     // Restore from localStorage (survives page reloads).  We pin the
@@ -183,17 +206,44 @@ export class BrowserAuth {
       .matches
       ? "dark"
       : "light";
-    const url =
-      this.origin +
-      "/api/sdk/grant?origin=" +
-      encodeURIComponent(location.origin) +
-      "&app=" +
-      encodeURIComponent(location.host) +
-      "&redirect_to=" +
-      encodeURIComponent(ret) +
-      "&scheme=" +
-      scheme;
-    location.href = url;
+    location.href = this.buildGrantUrl({
+      pageOrigin: location.origin,
+      app: location.host,
+      redirectTo: ret,
+      scheme,
+    });
+  }
+
+  /**
+   * Build the `/api/sdk/grant?…` URL the user is redirected to.  Split
+   * out so tests can assert URL formation without a `window` context;
+   * `signIn` is the only production caller.
+   *
+   * Public surface, but namespaced under `_buildGrantUrlForTest` so it
+   * doesn't show up in IntelliSense as a normal API.
+   */
+  _buildGrantUrlForTest(args: {
+    pageOrigin: string;
+    app: string;
+    redirectTo: string;
+    scheme: "light" | "dark";
+  }): string {
+    return this.buildGrantUrl(args);
+  }
+
+  private buildGrantUrl(args: {
+    pageOrigin: string;
+    app: string;
+    redirectTo: string;
+    scheme: "light" | "dark";
+  }): string {
+    const params = new URLSearchParams();
+    params.set("origin", args.pageOrigin);
+    params.set("app", args.app);
+    params.set("redirect_to", args.redirectTo);
+    params.set("scheme", args.scheme);
+    if (this.project) params.set("project_id", this.project);
+    return this.origin + "/api/sdk/grant?" + params.toString();
   }
 
   // ── Internals ────────────────────────────────────────────────────

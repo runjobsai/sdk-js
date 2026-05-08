@@ -38,6 +38,19 @@ export interface ClientOptions {
     authProvider?: AuthProvider;
     /** Hide the floating identity badge in `runjobs` auth mode. */
     hideIdentityBadge?: boolean;
+    /**
+     * Pin the runjobs.ai grant flow to a specific project (only used
+     * when `authProvider: "runjobs"`).  When set, `/api/sdk/grant`
+     * receives `project_id=<value>` and mints an `rrt_*` resource
+     * token bound to THAT project — required for `client.files.*`
+     * calls from any origin that isn't a registered (origin, app)
+     * pair (e.g. a bundle running on `localhost:5173` during dev).
+     *
+     * Production bundles served from a registered origin can omit
+     * this; the gateway derives the project from the (origin, app)
+     * pair.
+     */
+    project?: string;
     /** Override the default gateway base URL.  Defaults to
      *  `https://api.runjobs.ai`, or `https://www.runjobs.ai` when
      *  `authProvider: "runjobs"` is set. */

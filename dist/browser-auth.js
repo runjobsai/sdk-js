@@ -43,6 +43,7 @@ const SIGNED_OUT_KEY = "__runjobs_signed_out_v1__";
 export class BrowserAuth {
     origin;
     hideBadge;
+    project;
     token = null;
     expiresAt = 0;
     userInfo = null;
@@ -52,6 +53,7 @@ export class BrowserAuth {
     constructor(opts = {}) {
         this.origin = (opts.origin ?? "https://www.runjobs.ai").replace(/\/$/, "");
         this.hideBadge = !!opts.hideBadge;
+        this.project = opts.project ?? null;
         if (typeof window === "undefined")
             return;
         // Restore from localStorage (survives page reloads).  We pin the
@@ -155,16 +157,33 @@ export class BrowserAuth {
             .matches
             ? "dark"
             : "light";
-        const url = this.origin +
-            "/api/sdk/grant?origin=" +
-            encodeURIComponent(location.origin) +
-            "&app=" +
-            encodeURIComponent(location.host) +
-            "&redirect_to=" +
-            encodeURIComponent(ret) +
-            "&scheme=" +
-            scheme;
-        location.href = url;
+        location.href = this.buildGrantUrl({
+            pageOrigin: location.origin,
+            app: location.host,
+            redirectTo: ret,
+            scheme,
+        });
+    }
+    /**
+     * Build the `/api/sdk/grant?…` URL the user is redirected to.  Split
+     * out so tests can assert URL formation without a `window` context;
+     * `signIn` is the only production caller.
+     *
+     * Public surface, but namespaced under `_buildGrantUrlForTest` so it
+     * doesn't show up in IntelliSense as a normal API.
+     */
+    _buildGrantUrlForTest(args) {
+        return this.buildGrantUrl(args);
+    }
+    buildGrantUrl(args) {
+        const params = new URLSearchParams();
+        params.set("origin", args.pageOrigin);
+        params.set("app", args.app);
+        params.set("redirect_to", args.redirectTo);
+        params.set("scheme", args.scheme);
+        if (this.project)
+            params.set("project_id", this.project);
+        return this.origin + "/api/sdk/grant?" + params.toString();
     }
     // ── Internals ────────────────────────────────────────────────────
     nowSec() {

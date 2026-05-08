@@ -8,6 +8,27 @@ export interface BrowserAuthOptions {
      * Suppress the floating identity badge.  Default `false`.
      */
     hideBadge?: boolean;
+    /**
+     * Pin the grant flow to a named runjobs.ai project.  When set, the
+     * SDK passes `project_id=<value>` to `/api/sdk/grant`, asking the
+     * gateway to mint a project-bound `rrt_*` resource token for THAT
+     * project regardless of which (origin, app) pair the bundle is
+     * served from.
+     *
+     * Use cases:
+     *   - **Local dev** for a 1:1 bundle/project app: the localhost
+     *     origin isn't registered with any project, so without this
+     *     option the grant flow can't pick one and `client.files` 403s
+     *     on every call.  Pin the project explicitly and `pnpm dev`
+     *     hits the same files namespace as production.
+     *   - **Multi-tenant bundles** that let the user pick a project at
+     *     runtime — pass the chosen project id, then call `signOut()` +
+     *     `signIn()` (or reconstruct the client) on switch.
+     *
+     * Omit to keep the default behaviour: the gateway derives the
+     * project from the registered (origin, app) pair.
+     */
+    project?: string;
 }
 export interface BrowserUser {
     id?: string;
@@ -28,6 +49,7 @@ export interface BrowserUser {
 export declare class BrowserAuth {
     private readonly origin;
     private readonly hideBadge;
+    private readonly project;
     private token;
     private expiresAt;
     private userInfo;
@@ -54,6 +76,21 @@ export declare class BrowserAuth {
     signOut(): void;
     /** Force a redirect to the grant page. */
     signIn(): void;
+    /**
+     * Build the `/api/sdk/grant?…` URL the user is redirected to.  Split
+     * out so tests can assert URL formation without a `window` context;
+     * `signIn` is the only production caller.
+     *
+     * Public surface, but namespaced under `_buildGrantUrlForTest` so it
+     * doesn't show up in IntelliSense as a normal API.
+     */
+    _buildGrantUrlForTest(args: {
+        pageOrigin: string;
+        app: string;
+        redirectTo: string;
+        scheme: "light" | "dark";
+    }): string;
+    private buildGrantUrl;
     private nowSec;
     private tokenIsFresh;
     private inIframe;

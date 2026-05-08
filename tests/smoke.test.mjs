@@ -28,7 +28,12 @@ test("RunJobs constructs with apiKey and exposes all services", () => {
 });
 
 test("RunJobs throws when apiKey is missing", () => {
-  assert.throws(() => new RunJobs({ apiKey: "" }), /apiKey is required/);
+  // Error message mentions all three accepted auth shapes so the user
+  // knows the SDK supports `apiKeyResolver` / `authProvider` too.
+  assert.throws(
+    () => new RunJobs({ apiKey: "" }),
+    /pass either `apiKey`.*`apiKeyResolver`.*`authProvider/,
+  );
 });
 
 test("APIError carries statusCode and is instanceof Error", () => {

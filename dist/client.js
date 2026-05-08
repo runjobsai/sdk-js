@@ -60,6 +60,7 @@ export class RunJobs {
                 ...(options.hideIdentityBadge !== undefined && {
                     hideBadge: options.hideIdentityBadge,
                 }),
+                ...(options.project !== undefined && { project: options.project }),
             });
             this.auth = auth;
             // The browser auth resolver wins over any caller-supplied one
