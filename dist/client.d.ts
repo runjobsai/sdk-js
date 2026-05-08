@@ -4,6 +4,7 @@ import { ImageService } from "./image.js";
 import { AudioService } from "./audio.js";
 import { VideoService } from "./video.js";
 import { ComputerService } from "./computer.js";
+import { FilesService } from "./files.js";
 import { BrowserAuth, type BrowserUser } from "./browser-auth.js";
 /**
  * Auth strategy.
@@ -74,6 +75,7 @@ export declare class RunJobs {
     readonly audio: AudioService;
     readonly video: VideoService;
     readonly computer: ComputerService;
+    readonly files: FilesService;
     /**
      * Browser auth helper, populated only when `authProvider: "runjobs"`.
      * Use `client.signIn()` and `client.user` for the common cases; the

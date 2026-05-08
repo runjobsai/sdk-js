@@ -5,6 +5,7 @@ import { ImageService } from "./image.js";
 import { AudioService } from "./audio.js";
 import { VideoService } from "./video.js";
 import { ComputerService } from "./computer.js";
+import { FilesService } from "./files.js";
 import { BrowserAuth, type BrowserUser } from "./browser-auth.js";
 
 const DEFAULT_BASE_URL = "https://api.runjobs.ai";
@@ -80,6 +81,7 @@ export class RunJobs {
   readonly audio: AudioService;
   readonly video: VideoService;
   readonly computer: ComputerService;
+  readonly files: FilesService;
 
   /**
    * Browser auth helper, populated only when `authProvider: "runjobs"`.
@@ -128,6 +130,7 @@ export class RunJobs {
     this.audio = new AudioService(transport);
     this.video = new VideoService(transport);
     this.computer = new ComputerService(transport);
+    this.files = new FilesService(transport);
   }
 
   /** Force a redirect to the runjobs.ai grant page.  No-op in static

@@ -147,6 +147,62 @@ export class Transport {
     return resp;
   }
 
+  /** PUT raw bytes with caller-supplied content type and headers. */
+  async putBytes<T>(
+    path: string,
+    body: BodyInit,
+    opts?: {
+      contentType?: string;
+      headers?: Record<string, string>;
+      signal?: AbortSignal;
+      parse?: "json" | "none";
+    },
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      ...(await this.authHeaders()),
+      "Content-Type": opts?.contentType ?? "application/octet-stream",
+    };
+    if (opts?.headers) Object.assign(headers, opts.headers);
+    const resp = await this.fetchImpl(this.baseURL + path, {
+      method: "PUT",
+      headers,
+      body,
+      signal: opts?.signal,
+    });
+    if (!resp.ok) throw await this.parseError(resp);
+    if (opts?.parse === "none") return undefined as unknown as T;
+    return (await resp.json()) as T;
+  }
+
+  /** DELETE path; parse JSON response (or no body). */
+  async deletePath<T>(
+    path: string,
+    init?: { signal?: AbortSignal; parse?: "json" | "none" },
+  ): Promise<T> {
+    const resp = await this.fetchImpl(this.baseURL + path, {
+      method: "DELETE",
+      headers: await this.authHeaders(),
+      signal: init?.signal,
+    });
+    if (!resp.ok) throw await this.parseError(resp);
+    if (init?.parse === "none") return undefined as unknown as T;
+    return (await resp.json()) as T;
+  }
+
+  /** HEAD path; surface status + selected response headers.  Used by
+   *  exists / stat where the body would just be an opaque blob. */
+  async head(
+    path: string,
+    init?: { signal?: AbortSignal },
+  ): Promise<{ status: number; headers: Headers }> {
+    const resp = await this.fetchImpl(this.baseURL + path, {
+      method: "HEAD",
+      headers: await this.authHeaders(),
+      signal: init?.signal,
+    });
+    return { status: resp.status, headers: resp.headers };
+  }
+
   private async jsonHeaders(): Promise<Record<string, string>> {
     return {
       "Content-Type": "application/json",

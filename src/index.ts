@@ -75,3 +75,14 @@ export type {
   ComputerContentBlock,
   ComputerResponse,
 } from "./computer.js";
+
+// Files (per-project file system)
+export type {
+  FileObject,
+  FileListResult,
+  PutOptions as FilePutOptions,
+  ListOptions as FileListOptions,
+  PutFromURLOptions as FilePutFromURLOptions,
+  BatchOp as FileBatchOp,
+  BatchResult as FileBatchResult,
+} from "./files.js";

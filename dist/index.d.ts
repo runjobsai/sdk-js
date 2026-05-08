@@ -17,4 +17,5 @@ export type { ImageGenerateParams, ImageResult, ImageUsage, ImageResponse, Image
 export type { SpeechParams, SpeechResponse, TranscribeParams, TranscribeResponse, AudioFileInput, } from "./audio.js";
 export type { VideoGenerateParams, VideoTask, VideoStatus, VideoUsageTokens, WaitOptions, } from "./video.js";
 export type { ComputerStepParams, ComputerContentBlock, ComputerResponse, } from "./computer.js";
+export type { FileObject, FileListResult, PutOptions as FilePutOptions, ListOptions as FileListOptions, PutFromURLOptions as FilePutFromURLOptions, BatchOp as FileBatchOp, BatchResult as FileBatchResult, } from "./files.js";
 //# sourceMappingURL=index.d.ts.map

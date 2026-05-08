@@ -54,6 +54,26 @@ export declare class Transport {
     postJSONStream(path: string, body: unknown, init?: {
         signal?: AbortSignal;
     }): Promise<Response>;
+    /** PUT raw bytes with caller-supplied content type and headers. */
+    putBytes<T>(path: string, body: BodyInit, opts?: {
+        contentType?: string;
+        headers?: Record<string, string>;
+        signal?: AbortSignal;
+        parse?: "json" | "none";
+    }): Promise<T>;
+    /** DELETE path; parse JSON response (or no body). */
+    deletePath<T>(path: string, init?: {
+        signal?: AbortSignal;
+        parse?: "json" | "none";
+    }): Promise<T>;
+    /** HEAD path; surface status + selected response headers.  Used by
+     *  exists / stat where the body would just be an opaque blob. */
+    head(path: string, init?: {
+        signal?: AbortSignal;
+    }): Promise<{
+        status: number;
+        headers: Headers;
+    }>;
     private jsonHeaders;
     private authHeaders;
     private parseError;
