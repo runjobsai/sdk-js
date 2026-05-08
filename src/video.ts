@@ -19,15 +19,25 @@ export interface VideoGenerateParams {
   resolution?: string;
   generate_audio?: boolean;
 
-  /** First / last frame keyframes (image-to-video). */
+  /**
+   * First / last frame keyframes (image-to-video). Each accepts:
+   *   - hosted https:// URL
+   *   - data:image/...;base64,<payload> URI (use `encodeImageUrl`)
+   *
+   * The previous `first_frame_b64` / `last_frame_b64` sibling fields
+   * were removed — wrap raw bytes in a data: URI client-side via
+   * `encodeImageUrl` and pass through `*_url` instead.
+   */
   first_frame_url?: string;
   last_frame_url?: string;
-  first_frame_b64?: string;
-  last_frame_b64?: string;
 
-  /** Multimodal reference inputs (Seedance 2.0). */
+  /**
+   * Multimodal reference inputs (Seedance 2.0). Each entry can be a
+   * hosted URL or a data: URI (use `encodeImageUrl` for raw bytes).
+   * `reference_images_b64` was removed — fold any raw-base64 entries
+   * into `reference_image_urls` as data: URIs.
+   */
   reference_image_urls?: string[];
-  reference_images_b64?: string[];
   reference_video_urls?: string[];
   reference_audio_urls?: string[];
 

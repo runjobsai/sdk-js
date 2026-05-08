@@ -1,0 +1,86 @@
+/**
+ * Media helpers shared by image / video / chat-multimodal endpoints.
+ *
+ * The gateway accepts media payloads as `data:<mime>;base64,<payload>`
+ * URIs on every `*_url` field — `encodeImageUrl` is the bridge from
+ * raw bytes to that wire format. Replaces the deprecated `*_b64` SDK
+ * fields, which were removed in favour of routing every payload
+ * through `*_url`.
+ */
+
+/**
+ * Wrap raw image bytes as a `data:<mime>;base64,<payload>` URI.
+ *
+ * MIME is sniffed from the magic bytes (PNG / JPEG / GIF / WebP). On
+ * unrecognised input we default to `application/octet-stream` — most
+ * upstreams accept and re-sniff server-side.
+ *
+ * @param bytes Image bytes — `Uint8Array`, `ArrayBuffer`, or `Blob`.
+ * @returns A data: URI suitable for any `*_url` field on the gateway.
+ *
+ * @example
+ * ```ts
+ * import { encodeImageUrl } from "@runjobs/sdk";
+ * const png = await fs.readFile("frame.png");
+ * await client.video.generate("Veo 3.1", {
+ *   prompt: "...",
+ *   first_frame_url: encodeImageUrl(png),
+ * });
+ * ```
+ */
+export function encodeImageUrl(
+  bytes: Uint8Array | ArrayBuffer | Blob,
+): string {
+  // Normalize to Uint8Array so the rest of the function is uniform.
+  if (bytes instanceof Blob) {
+    throw new Error(
+      "encodeImageUrl: Blob input requires async; await blob.arrayBuffer() and pass the result instead",
+    );
+  }
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+
+  const mime = sniffImageMime(u8);
+
+  // btoa(String.fromCharCode(...u8)) blows the stack on large arrays;
+  // chunk to keep arg count bounded. 0x8000 is the conventional safe
+  // limit on JS engines.
+  const CHUNK = 0x8000;
+  let binary = "";
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(
+      null,
+      Array.from(u8.subarray(i, i + CHUNK)),
+    );
+  }
+  // btoa is browser-native and shimmed in Node ≥ 16 globalThis.
+  const b64 = (globalThis as { btoa?: (s: string) => string }).btoa
+    ? (globalThis as { btoa: (s: string) => string }).btoa(binary)
+    : Buffer.from(binary, "binary").toString("base64");
+
+  return `data:${mime};base64,${b64}`;
+}
+
+/**
+ * Sniff a small set of image mimes from magic bytes. Mirrors the
+ * gateway's own sniff so encode / decode round-trip lands on the same
+ * label.
+ */
+function sniffImageMime(b: Uint8Array): string {
+  if (b.length >= 8 &&
+      b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    return "image/png";
+  }
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (b.length >= 6 &&
+      b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
+    return "image/gif";
+  }
+  if (b.length >= 12 &&
+      b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+    return "image/webp";
+  }
+  return "application/octet-stream";
+}

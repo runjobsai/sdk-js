@@ -69,6 +69,9 @@ export type {
   WaitOptions,
 } from "./video.js";
 
+// Media helpers (shared by image + video + chat-multimodal)
+export { encodeImageUrl } from "./media.js";
+
 // Computer
 export type {
   ComputerStepParams,
