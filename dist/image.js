@@ -63,8 +63,6 @@ function buildEditForm(model, params) {
         form.set("size", params.size);
     if (params.n !== undefined)
         form.set("n", String(params.n));
-    if (params.response_format)
-        form.set("response_format", params.response_format);
     if (params.user)
         form.set("user", params.user);
     form.set("image", toBlob(params.image), params.image.filename);

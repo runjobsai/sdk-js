@@ -28,4 +28,29 @@
  * ```
  */
 export declare function encodeImageUrl(bytes: Uint8Array | ArrayBuffer | Blob): string;
+/**
+ * Resolve a media URL to raw bytes plus the declared mime label.
+ *
+ * Inverse of `encodeImageUrl`. Two transport modes handled:
+ *   - "data:<mime>;base64,<payload>"  — decode the inline payload
+ *   - "https://...", "http://..."     — `fetch()` + `.arrayBuffer()`,
+ *                                       mime from the response's
+ *                                       `Content-Type` header
+ *
+ * Returns `{bytes: Uint8Array, contentType: string}`. Pairs with
+ * `encodeImageUrl` so callers can round-trip bytes through the gateway
+ * without thinking about which transport mode the response chose.
+ *
+ * @example
+ * ```ts
+ * import { decodeMediaUrl } from "@runjobs/sdk";
+ * const job = await client.image.generateAsync("Seedream 5.0", {...});
+ * const { bytes, contentType } = await decodeMediaUrl(job.data[0].url);
+ * await fs.writeFile("out.png", bytes);
+ * ```
+ */
+export declare function decodeMediaUrl(url: string): Promise<{
+    bytes: Uint8Array;
+    contentType: string;
+}>;
 //# sourceMappingURL=media.d.ts.map

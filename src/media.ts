@@ -61,6 +61,67 @@ export function encodeImageUrl(
 }
 
 /**
+ * Resolve a media URL to raw bytes plus the declared mime label.
+ *
+ * Inverse of `encodeImageUrl`. Two transport modes handled:
+ *   - "data:<mime>;base64,<payload>"  — decode the inline payload
+ *   - "https://...", "http://..."     — `fetch()` + `.arrayBuffer()`,
+ *                                       mime from the response's
+ *                                       `Content-Type` header
+ *
+ * Returns `{bytes: Uint8Array, contentType: string}`. Pairs with
+ * `encodeImageUrl` so callers can round-trip bytes through the gateway
+ * without thinking about which transport mode the response chose.
+ *
+ * @example
+ * ```ts
+ * import { decodeMediaUrl } from "@runjobs/sdk";
+ * const job = await client.image.generateAsync("Seedream 5.0", {...});
+ * const { bytes, contentType } = await decodeMediaUrl(job.data[0].url);
+ * await fs.writeFile("out.png", bytes);
+ * ```
+ */
+export async function decodeMediaUrl(
+  url: string,
+): Promise<{ bytes: Uint8Array; contentType: string }> {
+  if (url.startsWith("data:")) {
+    const rest = url.slice(5);
+    const semi = rest.indexOf(";");
+    const comma = rest.indexOf(",");
+    if (semi === -1 || comma === -1 || comma < semi) {
+      throw new Error("decodeMediaUrl: malformed data URI");
+    }
+    const mime = rest.slice(0, semi);
+    const b64 = rest.slice(comma + 1);
+    return { bytes: base64ToBytes(b64), contentType: mime };
+  }
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`decodeMediaUrl: upstream ${resp.status}`);
+    }
+    const buf = await resp.arrayBuffer();
+    return {
+      bytes: new Uint8Array(buf),
+      contentType: resp.headers.get("Content-Type") ?? "",
+    };
+  }
+  throw new Error(`decodeMediaUrl: unsupported url scheme: ${url.slice(0, 32)}`);
+}
+
+/** Decode standard base64 to Uint8Array. Browser `atob` + Node `Buffer`
+ *  fallback — same impl as the audio service uses internally. */
+function base64ToBytes(b64: string): Uint8Array {
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(b64, "base64"));
+  }
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
  * Sniff a small set of image mimes from magic bytes. Mirrors the
  * gateway's own sniff so encode / decode round-trip lands on the same
  * label.

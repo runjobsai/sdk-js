@@ -103,7 +103,13 @@ const img = await client.image.generate("MiniMax Image-01", {
   prompt: "a developer at a laptop, anime style",
   size: "1024x1024",
 });
-console.log(`Got ${img.data.length} image(s), cost $${img.usage.total_cost.toFixed(6)}`);
+// img.data[0].url is either "data:image/png;base64,..." (sync) or
+// "https://api.runjobs.ai/v1/blobs/<id>" (async). Either way, drop it
+// straight into <img src=…>; for raw bytes, decodeMediaUrl handles
+// both shapes uniformly.
+import { decodeMediaUrl } from "@runjobs/sdk";
+const { bytes, contentType } = await decodeMediaUrl(img.data[0].url);
+console.log(`Got ${bytes.length} bytes (${contentType}), cost $${img.usage.total_cost.toFixed(6)}`);
 
 // Edit (multipart)
 import { readFile } from "node:fs/promises";

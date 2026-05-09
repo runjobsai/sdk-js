@@ -6,31 +6,25 @@ export interface ImageGenerateParams {
     n?: number;
     quality?: string;
     style?: string;
-    /** @deprecated The gateway always returns `url` (with a `data:` URI
-     *  for inline bytes).  Field kept for backward compat only. */
-    response_format?: "url" | "b64_json";
     reference_image_urls?: string[];
     user?: string;
     /** Pass-through for provider-specific knobs. */
     [extra: string]: unknown;
 }
 /**
- * Single generated image.  The gateway always populates `url`:
- *   - hosted https URL when the upstream returned one (most providers)
- *   - `data:<mime>;base64,<payload>` URI when the upstream returned
- *     inline bytes (gpt-image-1, Seedream variants etc.)
+ * Single generated image. `url` carries the bytes via one of two
+ * transport modes — `<img src={url}>` works for both:
+ *   - "https://api.runjobs.ai/v1/blobs/<id>" — async / hosted blob
+ *   - "data:<mime>;base64,<payload>"        — sync / inline
  *
- * Either form can go straight into `<img src=…>` — no branching needed.
+ * `decodeMediaUrl(url)` resolves either shape into `Uint8Array` +
+ * mime type when raw bytes are wanted (file save, post-process).
  *
  * `size` is the actual dimensions of this image — Seedream sequential
  * generation may produce results different from the requested size.
  */
 export interface ImageResult {
     url: string;
-    /** @deprecated Always empty now — gateway folds inline bytes into
-     *  `url` as a `data:` URI.  Kept on the type to avoid breaking
-     *  consumers that read this field defensively. */
-    b64_json?: string;
     revised_prompt?: string;
     size?: string;
 }
@@ -84,7 +78,6 @@ export interface ImageEditParams {
     prompt: string;
     size?: string;
     n?: number;
-    response_format?: "url" | "b64_json";
     user?: string;
 }
 export declare class ImageService {

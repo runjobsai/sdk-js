@@ -70,7 +70,7 @@ export type {
 } from "./video.js";
 
 // Media helpers (shared by image + video + chat-multimodal)
-export { encodeImageUrl } from "./media.js";
+export { encodeImageUrl, decodeMediaUrl } from "./media.js";
 
 // Computer
 export type {

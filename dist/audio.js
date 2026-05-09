@@ -1,3 +1,4 @@
+import { decodeMediaUrl } from "./media.js";
 /* ------------------------------------------------------------------ */
 /* Service                                                             */
 /* ------------------------------------------------------------------ */
@@ -21,10 +22,16 @@ export class AudioService {
      * ```
      */
     async speech(model, params, init) {
+        // Wire shape: {audio_url: "data:<mime>;base64,...", usage: ...}.
+        // The data: URI carries both the mime label and the base64 payload;
+        // decodeMediaUrl handles both data: URIs and (for forward compat,
+        // should the gateway ever switch to a hosted blob URL) http(s)
+        // URLs symmetrically.
         const raw = await this.transport.postJSON("/v1/audio/speech", { model, ...params }, init);
+        const { bytes, contentType } = await decodeMediaUrl(raw.audio_url);
         return {
-            data: base64ToBytes(raw.b64_audio),
-            contentType: raw.content_type,
+            data: bytes,
+            contentType,
             usage: raw.usage,
         };
     }
@@ -79,16 +86,7 @@ function guessAudioMime(filename) {
             return "application/octet-stream";
     }
 }
-/** Decode standard base64 to bytes. Uses Node's Buffer when available. */
-function base64ToBytes(b64) {
-    if (typeof Buffer !== "undefined") {
-        return new Uint8Array(Buffer.from(b64, "base64"));
-    }
-    // Browser fallback.
-    const bin = atob(b64);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++)
-        out[i] = bin.charCodeAt(i);
-    return out;
-}
+// (base64ToBytes was here — promoted to media.ts as part of
+// decodeMediaUrl. The audio path now goes through that single helper
+// so image and audio decode through one implementation.)
 //# sourceMappingURL=audio.js.map
