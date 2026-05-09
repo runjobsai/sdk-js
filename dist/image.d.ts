@@ -6,6 +6,8 @@ export interface ImageGenerateParams {
     n?: number;
     quality?: string;
     style?: string;
+    /** @deprecated The gateway always returns `url` (with a `data:` URI
+     *  for inline bytes).  Field kept for backward compat only. */
     response_format?: "url" | "b64_json";
     reference_image_urls?: string[];
     user?: string;
@@ -13,13 +15,21 @@ export interface ImageGenerateParams {
     [extra: string]: unknown;
 }
 /**
- * Single generated image. `b64_json` is set when the gateway returned the
- * bytes inline; `url` when the gateway returned a hosted URL. `size` is
- * the *actual* dimensions of this image — Seedream sequential generation
- * may produce results different from the requested size.
+ * Single generated image.  The gateway always populates `url`:
+ *   - hosted https URL when the upstream returned one (most providers)
+ *   - `data:<mime>;base64,<payload>` URI when the upstream returned
+ *     inline bytes (gpt-image-1, Seedream variants etc.)
+ *
+ * Either form can go straight into `<img src=…>` — no branching needed.
+ *
+ * `size` is the actual dimensions of this image — Seedream sequential
+ * generation may produce results different from the requested size.
  */
 export interface ImageResult {
-    url?: string;
+    url: string;
+    /** @deprecated Always empty now — gateway folds inline bytes into
+     *  `url` as a `data:` URI.  Kept on the type to avoid breaking
+     *  consumers that read this field defensively. */
     b64_json?: string;
     revised_prompt?: string;
     size?: string;
