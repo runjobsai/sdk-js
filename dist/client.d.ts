@@ -5,6 +5,7 @@ import { AudioService } from "./audio.js";
 import { VideoService } from "./video.js";
 import { ComputerService } from "./computer.js";
 import { FilesService } from "./files.js";
+import { EmbeddingsService } from "./embeddings.js";
 import { BrowserAuth, type BrowserUser } from "./browser-auth.js";
 /**
  * Auth strategy.
@@ -89,6 +90,7 @@ export declare class RunJobs {
     readonly video: VideoService;
     readonly computer: ComputerService;
     readonly files: FilesService;
+    readonly embeddings: EmbeddingsService;
     /**
      * Browser auth helper, populated only when `authProvider: "runjobs"`.
      * Use `client.signIn()` and `client.user` for the common cases; the

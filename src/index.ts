@@ -89,3 +89,11 @@ export type {
   BatchOp as FileBatchOp,
   BatchResult as FileBatchResult,
 } from "./files.js";
+
+// Embeddings
+export type {
+  EmbeddingsParams,
+  Embedding,
+  EmbeddingsUsage,
+  EmbeddingsResponse,
+} from "./embeddings.js";
