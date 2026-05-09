@@ -64,6 +64,19 @@ export declare class BrowserAuth {
     /** Currently-authenticated user, or null. */
     get user(): BrowserUser | null;
     /**
+     * True iff a cached bearer token is present AND not within the
+     * 60-second pre-expiry refresh margin.  Use this — not `user !==
+     * null` — to decide whether to show "please sign in" UI: the user
+     * metadata is only populated when the SDK was fed fresh user info
+     * (post-redirect fragment carries it; iframe handshake carries it;
+     * an older localStorage save format may have persisted only the
+     * token).  A token without metadata is still a fully-usable
+     * session — every gateway call will succeed — and prompting the
+     * user to sign in there causes a redirect that loses session
+     * continuity for no reason.
+     */
+    hasFreshToken(): boolean;
+    /**
      * Clear the cached token / user / badge and the persisted copy in
      * localStorage.  Next gateway call will trigger a redirect to the
      * grant page — i.e. the standard sign-in flow.  Wire this to a
