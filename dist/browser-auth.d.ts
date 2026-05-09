@@ -5,7 +5,11 @@ export interface BrowserAuthOptions {
      */
     origin?: string;
     /**
-     * Suppress the floating identity badge.  Default `false`.
+     * Suppress the floating identity badge.  Default `false` at this
+     * layer, but the wrapping `RunJobs` client passes `hideBadge: true`
+     * unless the caller sets `showIdentityBadge: true` — so the badge
+     * is hidden by default for SDK consumers.  Set this directly only
+     * when constructing BrowserAuth without going through `RunJobs`.
      */
     hideBadge?: boolean;
     /**

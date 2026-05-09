@@ -37,7 +37,18 @@ export interface ClientOptions {
      * baseURL defaults to `https://www.runjobs.ai` in that mode.
      */
     authProvider?: AuthProvider;
-    /** Hide the floating identity badge in `runjobs` auth mode. */
+    /**
+     * Show the floating identity badge in `runjobs` auth mode.
+     * Default `false` — bundles ship their own UI most of the time
+     * and the platform badge would clutter the page corner.  Set
+     * `true` for unauthenticated public bundles where the badge is
+     * the only sign-out affordance.
+     */
+    showIdentityBadge?: boolean;
+    /**
+     * @deprecated Use `showIdentityBadge` instead.  Kept for back-compat;
+     * acts as `showIdentityBadge: !hideIdentityBadge` when set.
+     */
     hideIdentityBadge?: boolean;
     /**
      * Pin the runjobs.ai grant flow to a specific project (only used
