@@ -456,16 +456,26 @@ export class BrowserAuth {
     });
   }
 
-  /** Floating identity badge — bottom-right pill showing the user. */
+  /** Floating identity badge — bottom-right pill showing the user.
+   *  Click opens the runjobs.ai dashboard in a new tab so the user
+   *  can manage their account / billing without losing the bundle's
+   *  in-flight state.  Uses `noopener,noreferrer` so the new tab
+   *  can't reach back into the bundle window via `window.opener`. */
   private renderBadge() {
     if (typeof document === "undefined" || !this.userInfo) return;
     const ID = "__runjobs_identity__";
+    const dashboardUrl = `${this.origin}/dashboard`;
     const ready = (cb: () => void) =>
       document.body ? cb() : document.addEventListener("DOMContentLoaded", cb);
     ready(() => {
       document.getElementById(ID)?.remove();
-      const el = document.createElement("div");
+      // <button> instead of <div> — keyboard-focusable, screen-reader
+      // announces it as a button, native Enter/Space activation.
+      const el = document.createElement("button");
       el.id = ID;
+      el.type = "button";
+      el.title = "Open RunJobs dashboard";
+      el.setAttribute("aria-label", "Open RunJobs dashboard");
       el.style.cssText = [
         "position:fixed",
         "bottom:16px",
@@ -486,7 +496,30 @@ export class BrowserAuth {
         "user-select:none",
         "max-width:220px",
         "overflow:hidden",
+        "cursor:pointer",
+        // Strip <button>'s default appearance so it inherits the
+        // pill silhouette established above.
+        "appearance:none",
+        "-webkit-appearance:none",
+        // Subtle hover affordance — the cursor change tells the user
+        // it's clickable, the color shift tells them they ARE on it.
+        "transition:background-color 120ms ease-out, box-shadow 120ms ease-out",
       ].join(";");
+      el.addEventListener("mouseenter", () => {
+        el.style.backgroundColor = "rgba(30,30,40,0.7)";
+        el.style.boxShadow = "0 6px 20px rgba(0,0,0,0.22)";
+      });
+      el.addEventListener("mouseleave", () => {
+        el.style.backgroundColor = "rgba(15,15,20,0.55)";
+        el.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)";
+      });
+      el.addEventListener("click", () => {
+        // `noopener,noreferrer`: the new tab gets no `window.opener`
+        // back-reference, so it can't navigate or read state from the
+        // bundle window.  Standard hardening when window.open()-ing
+        // a different origin.
+        window.open(dashboardUrl, "_blank", "noopener,noreferrer");
+      });
       const u = this.userInfo as BrowserUser;
       const avatar = document.createElement("div");
       avatar.textContent = (u.name || "?").charAt(0).toUpperCase();

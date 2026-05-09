@@ -127,7 +127,11 @@ export declare class BrowserAuth {
     private consumeFragment;
     /** postMessage handshake with the dashboard parent (iframe path). */
     private requestTokenFromParent;
-    /** Floating identity badge — bottom-right pill showing the user. */
+    /** Floating identity badge — bottom-right pill showing the user.
+     *  Click opens the runjobs.ai dashboard in a new tab so the user
+     *  can manage their account / billing without losing the bundle's
+     *  in-flight state.  Uses `noopener,noreferrer` so the new tab
+     *  can't reach back into the bundle window via `window.opener`. */
     private renderBadge;
 }
 //# sourceMappingURL=browser-auth.d.ts.map
