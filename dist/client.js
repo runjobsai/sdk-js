@@ -50,6 +50,7 @@ export class RunJobs {
         const provider = options.authProvider ?? "static";
         let apiKeyResolver = options.apiKeyResolver;
         let baseURL = options.baseURL;
+        let onUnauthorized;
         if (provider === "runjobs") {
             // Default the gateway origin to www.runjobs.ai for the runjobs
             // auth flow — that's where /api/sdk/grant lives.  Users overriding
@@ -66,6 +67,10 @@ export class RunJobs {
             // The browser auth resolver wins over any caller-supplied one
             // because the auth flow owns token issuance + refresh from now on.
             apiKeyResolver = auth.getToken;
+            // 401 from the gateway → token was revoked server-side (typically
+            // because the user unsubscribed in another tab).  Drop the cached
+            // token so the transport's auto-retry hits a fresh signIn() flow.
+            onUnauthorized = () => auth.invalidate();
         }
         if (!options.apiKey && !apiKeyResolver) {
             throw new Error("runjobs: pass either `apiKey`, `apiKeyResolver`, or `authProvider: \"runjobs\"`");
@@ -74,6 +79,7 @@ export class RunJobs {
             baseURL: baseURL ?? DEFAULT_BASE_URL,
             ...(options.apiKey !== undefined && { apiKey: options.apiKey }),
             ...(apiKeyResolver !== undefined && { apiKeyResolver }),
+            ...(onUnauthorized !== undefined && { onUnauthorized }),
             ...(options.fetch ? { fetchImpl: options.fetch } : {}),
         });
         this.chat = new ChatService(transport);

@@ -194,6 +194,22 @@ export class BrowserAuth {
     this.removeBadge();
   }
 
+  /**
+   * Drop the in-memory + persisted token without setting the sticky
+   * "signed out" flag.  Used by the transport layer when the gateway
+   * returns 401 (token revoked server-side, e.g. user unsubscribed in
+   * another tab).  The next `getToken()` will trigger the standard
+   * `signIn()` redirect-grant flow and the user re-auths transparently.
+   */
+  invalidate(): void {
+    this.token = null;
+    this.expiresAt = 0;
+    this.userInfo = null;
+    this.parentHandshake = null;
+    this.signingIn = false;
+    this.clearPersisted();
+  }
+
   /** Force a redirect to the grant page. */
   signIn(): void {
     if (typeof window === "undefined" || this.signingIn) return;

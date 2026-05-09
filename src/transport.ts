@@ -19,6 +19,19 @@ export interface TransportOptions {
    *  the caller can return a Promise that hits a token endpoint. Wins
    *  over `apiKey` when both are supplied. */
   apiKeyResolver?: () => string | Promise<string>;
+  /**
+   * Hook invoked on 401 responses, *before* the request is automatically
+   * retried once.  Use this to invalidate any cached token so the next
+   * `apiKeyResolver` call fetches a fresh one.  Throwing here cancels
+   * the retry — the original 401 propagates.
+   *
+   * Typical wiring (browser-auth):
+   *   onUnauthorized: () => auth.invalidate()
+   * which clears the in-memory + persisted token without flipping the
+   * sticky "signed out" flag.  The retry's resolveToken() then triggers
+   * the standard signIn() redirect-grant flow.
+   */
+  onUnauthorized?: () => void | Promise<void>;
   /** Optional fetch override (e.g. node-fetch with custom agent). */
   fetchImpl?: typeof fetch;
 }
@@ -27,6 +40,7 @@ export class Transport {
   readonly baseURL: string;
   private readonly apiKey: string | undefined;
   private readonly apiKeyResolver: (() => string | Promise<string>) | undefined;
+  private readonly onUnauthorized: (() => void | Promise<void>) | undefined;
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: TransportOptions) {
@@ -38,6 +52,7 @@ export class Transport {
     this.baseURL = opts.baseURL.replace(/\/+$/, "");
     this.apiKey = opts.apiKey;
     this.apiKeyResolver = opts.apiKeyResolver;
+    this.onUnauthorized = opts.onUnauthorized;
     // Bind to globalThis when using the platform's native fetch.
     // Without binding, `this.fetchImpl(...)` invokes with `this`
     // pointing at the Transport instance, and the browser's
@@ -53,18 +68,43 @@ export class Transport {
     return this.apiKey ?? "";
   }
 
+  /**
+   * Wrap a fetch call with single-attempt 401 retry.  `build` produces a
+   * fresh RequestInit each call (so headers can re-resolve a fresh token,
+   * and bodies can be re-streamed for retry).  On 401, invokes
+   * `onUnauthorized()` (giving the caller a chance to invalidate cached
+   * auth state) then retries once with a fresh init.  No retry if
+   * `onUnauthorized` is absent or already retried.
+   */
+  private async fetchWithAuthRetry(
+    path: string,
+    build: () => Promise<RequestInit>,
+  ): Promise<Response> {
+    const url = this.baseURL + path;
+    let resp = await this.fetchImpl(url, await build());
+    if (resp.status !== 401 || !this.onUnauthorized) return resp;
+    try {
+      await this.onUnauthorized();
+    } catch {
+      // Hook bailed out — surface the original 401.
+      return resp;
+    }
+    resp = await this.fetchImpl(url, await build());
+    return resp;
+  }
+
   /** POST JSON body; parse JSON response. */
   async postJSON<T>(
     path: string,
     body: unknown,
     init?: { signal?: AbortSignal },
   ): Promise<T> {
-    const resp = await this.fetchImpl(this.baseURL + path, {
+    const resp = await this.fetchWithAuthRetry(path, async () => ({
       method: "POST",
       headers: await this.jsonHeaders(),
       body: JSON.stringify(body),
       signal: init?.signal,
-    });
+    }));
     if (!resp.ok) {
       throw await this.parseError(resp);
     }
@@ -76,11 +116,11 @@ export class Transport {
     path: string,
     init?: { signal?: AbortSignal },
   ): Promise<T> {
-    const resp = await this.fetchImpl(this.baseURL + path, {
+    const resp = await this.fetchWithAuthRetry(path, async () => ({
       method: "GET",
       headers: await this.authHeaders(),
       signal: init?.signal,
-    });
+    }));
     if (!resp.ok) {
       throw await this.parseError(resp);
     }
@@ -92,11 +132,11 @@ export class Transport {
     path: string,
     init?: { signal?: AbortSignal },
   ): Promise<{ data: Uint8Array; contentType: string }> {
-    const resp = await this.fetchImpl(this.baseURL + path, {
+    const resp = await this.fetchWithAuthRetry(path, async () => ({
       method: "GET",
       headers: await this.authHeaders(),
       signal: init?.signal,
-    });
+    }));
     if (!resp.ok) {
       throw await this.parseError(resp);
     }
@@ -111,12 +151,12 @@ export class Transport {
     form: FormData,
     init?: { signal?: AbortSignal },
   ): Promise<T> {
-    const resp = await this.fetchImpl(this.baseURL + path, {
+    const resp = await this.fetchWithAuthRetry(path, async () => ({
       method: "POST",
       headers: await this.authHeaders(), // do NOT set Content-Type — fetch sets it with boundary
       body: form,
       signal: init?.signal,
-    });
+    }));
     if (!resp.ok) {
       throw await this.parseError(resp);
     }
@@ -132,7 +172,7 @@ export class Transport {
     body: unknown,
     init?: { signal?: AbortSignal },
   ): Promise<Response> {
-    const resp = await this.fetchImpl(this.baseURL + path, {
+    const resp = await this.fetchWithAuthRetry(path, async () => ({
       method: "POST",
       headers: {
         ...(await this.jsonHeaders()),
@@ -140,7 +180,7 @@ export class Transport {
       },
       body: JSON.stringify(body),
       signal: init?.signal,
-    });
+    }));
     if (!resp.ok) {
       throw await this.parseError(resp);
     }
@@ -158,16 +198,18 @@ export class Transport {
       parse?: "json" | "none";
     },
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      ...(await this.authHeaders()),
-      "Content-Type": opts?.contentType ?? "application/octet-stream",
-    };
-    if (opts?.headers) Object.assign(headers, opts.headers);
-    const resp = await this.fetchImpl(this.baseURL + path, {
-      method: "PUT",
-      headers,
-      body,
-      signal: opts?.signal,
+    const resp = await this.fetchWithAuthRetry(path, async () => {
+      const headers: Record<string, string> = {
+        ...(await this.authHeaders()),
+        "Content-Type": opts?.contentType ?? "application/octet-stream",
+      };
+      if (opts?.headers) Object.assign(headers, opts.headers);
+      return {
+        method: "PUT",
+        headers,
+        body,
+        signal: opts?.signal,
+      };
     });
     if (!resp.ok) throw await this.parseError(resp);
     if (opts?.parse === "none") return undefined as unknown as T;
@@ -179,11 +221,11 @@ export class Transport {
     path: string,
     init?: { signal?: AbortSignal; parse?: "json" | "none" },
   ): Promise<T> {
-    const resp = await this.fetchImpl(this.baseURL + path, {
+    const resp = await this.fetchWithAuthRetry(path, async () => ({
       method: "DELETE",
       headers: await this.authHeaders(),
       signal: init?.signal,
-    });
+    }));
     if (!resp.ok) throw await this.parseError(resp);
     if (init?.parse === "none") return undefined as unknown as T;
     return (await resp.json()) as T;
@@ -195,11 +237,11 @@ export class Transport {
     path: string,
     init?: { signal?: AbortSignal },
   ): Promise<{ status: number; headers: Headers }> {
-    const resp = await this.fetchImpl(this.baseURL + path, {
+    const resp = await this.fetchWithAuthRetry(path, async () => ({
       method: "HEAD",
       headers: await this.authHeaders(),
       signal: init?.signal,
-    });
+    }));
     return { status: resp.status, headers: resp.headers };
   }
 

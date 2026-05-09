@@ -17,6 +17,19 @@ export interface TransportOptions {
      *  the caller can return a Promise that hits a token endpoint. Wins
      *  over `apiKey` when both are supplied. */
     apiKeyResolver?: () => string | Promise<string>;
+    /**
+     * Hook invoked on 401 responses, *before* the request is automatically
+     * retried once.  Use this to invalidate any cached token so the next
+     * `apiKeyResolver` call fetches a fresh one.  Throwing here cancels
+     * the retry — the original 401 propagates.
+     *
+     * Typical wiring (browser-auth):
+     *   onUnauthorized: () => auth.invalidate()
+     * which clears the in-memory + persisted token without flipping the
+     * sticky "signed out" flag.  The retry's resolveToken() then triggers
+     * the standard signIn() redirect-grant flow.
+     */
+    onUnauthorized?: () => void | Promise<void>;
     /** Optional fetch override (e.g. node-fetch with custom agent). */
     fetchImpl?: typeof fetch;
 }
@@ -24,10 +37,20 @@ export declare class Transport {
     readonly baseURL: string;
     private readonly apiKey;
     private readonly apiKeyResolver;
+    private readonly onUnauthorized;
     private readonly fetchImpl;
     constructor(opts: TransportOptions);
     /** Resolve the bearer token for the next request. */
     private resolveToken;
+    /**
+     * Wrap a fetch call with single-attempt 401 retry.  `build` produces a
+     * fresh RequestInit each call (so headers can re-resolve a fresh token,
+     * and bodies can be re-streamed for retry).  On 401, invokes
+     * `onUnauthorized()` (giving the caller a chance to invalidate cached
+     * auth state) then retries once with a fresh init.  No retry if
+     * `onUnauthorized` is absent or already retried.
+     */
+    private fetchWithAuthRetry;
     /** POST JSON body; parse JSON response. */
     postJSON<T>(path: string, body: unknown, init?: {
         signal?: AbortSignal;

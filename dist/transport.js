@@ -3,6 +3,7 @@ export class Transport {
     baseURL;
     apiKey;
     apiKeyResolver;
+    onUnauthorized;
     fetchImpl;
     constructor(opts) {
         if (!opts.apiKey && !opts.apiKeyResolver) {
@@ -11,6 +12,7 @@ export class Transport {
         this.baseURL = opts.baseURL.replace(/\/+$/, "");
         this.apiKey = opts.apiKey;
         this.apiKeyResolver = opts.apiKeyResolver;
+        this.onUnauthorized = opts.onUnauthorized;
         // Bind to globalThis when using the platform's native fetch.
         // Without binding, `this.fetchImpl(...)` invokes with `this`
         // pointing at the Transport instance, and the browser's
@@ -25,14 +27,37 @@ export class Transport {
             return await this.apiKeyResolver();
         return this.apiKey ?? "";
     }
+    /**
+     * Wrap a fetch call with single-attempt 401 retry.  `build` produces a
+     * fresh RequestInit each call (so headers can re-resolve a fresh token,
+     * and bodies can be re-streamed for retry).  On 401, invokes
+     * `onUnauthorized()` (giving the caller a chance to invalidate cached
+     * auth state) then retries once with a fresh init.  No retry if
+     * `onUnauthorized` is absent or already retried.
+     */
+    async fetchWithAuthRetry(path, build) {
+        const url = this.baseURL + path;
+        let resp = await this.fetchImpl(url, await build());
+        if (resp.status !== 401 || !this.onUnauthorized)
+            return resp;
+        try {
+            await this.onUnauthorized();
+        }
+        catch {
+            // Hook bailed out — surface the original 401.
+            return resp;
+        }
+        resp = await this.fetchImpl(url, await build());
+        return resp;
+    }
     /** POST JSON body; parse JSON response. */
     async postJSON(path, body, init) {
-        const resp = await this.fetchImpl(this.baseURL + path, {
+        const resp = await this.fetchWithAuthRetry(path, async () => ({
             method: "POST",
             headers: await this.jsonHeaders(),
             body: JSON.stringify(body),
             signal: init?.signal,
-        });
+        }));
         if (!resp.ok) {
             throw await this.parseError(resp);
         }
@@ -40,11 +65,11 @@ export class Transport {
     }
     /** GET path; parse JSON response. */
     async getJSON(path, init) {
-        const resp = await this.fetchImpl(this.baseURL + path, {
+        const resp = await this.fetchWithAuthRetry(path, async () => ({
             method: "GET",
             headers: await this.authHeaders(),
             signal: init?.signal,
-        });
+        }));
         if (!resp.ok) {
             throw await this.parseError(resp);
         }
@@ -52,11 +77,11 @@ export class Transport {
     }
     /** GET path; return raw bytes + content-type (for video/audio downloads). */
     async getRaw(path, init) {
-        const resp = await this.fetchImpl(this.baseURL + path, {
+        const resp = await this.fetchWithAuthRetry(path, async () => ({
             method: "GET",
             headers: await this.authHeaders(),
             signal: init?.signal,
-        });
+        }));
         if (!resp.ok) {
             throw await this.parseError(resp);
         }
@@ -66,12 +91,12 @@ export class Transport {
     }
     /** POST a multipart/form-data body. Used by audio.transcribe and image.edit. */
     async postMultipart(path, form, init) {
-        const resp = await this.fetchImpl(this.baseURL + path, {
+        const resp = await this.fetchWithAuthRetry(path, async () => ({
             method: "POST",
             headers: await this.authHeaders(), // do NOT set Content-Type — fetch sets it with boundary
             body: form,
             signal: init?.signal,
-        });
+        }));
         if (!resp.ok) {
             throw await this.parseError(resp);
         }
@@ -82,7 +107,7 @@ export class Transport {
      * streaming. Caller is responsible for consuming the SSE body.
      */
     async postJSONStream(path, body, init) {
-        const resp = await this.fetchImpl(this.baseURL + path, {
+        const resp = await this.fetchWithAuthRetry(path, async () => ({
             method: "POST",
             headers: {
                 ...(await this.jsonHeaders()),
@@ -90,7 +115,7 @@ export class Transport {
             },
             body: JSON.stringify(body),
             signal: init?.signal,
-        });
+        }));
         if (!resp.ok) {
             throw await this.parseError(resp);
         }
@@ -98,17 +123,19 @@ export class Transport {
     }
     /** PUT raw bytes with caller-supplied content type and headers. */
     async putBytes(path, body, opts) {
-        const headers = {
-            ...(await this.authHeaders()),
-            "Content-Type": opts?.contentType ?? "application/octet-stream",
-        };
-        if (opts?.headers)
-            Object.assign(headers, opts.headers);
-        const resp = await this.fetchImpl(this.baseURL + path, {
-            method: "PUT",
-            headers,
-            body,
-            signal: opts?.signal,
+        const resp = await this.fetchWithAuthRetry(path, async () => {
+            const headers = {
+                ...(await this.authHeaders()),
+                "Content-Type": opts?.contentType ?? "application/octet-stream",
+            };
+            if (opts?.headers)
+                Object.assign(headers, opts.headers);
+            return {
+                method: "PUT",
+                headers,
+                body,
+                signal: opts?.signal,
+            };
         });
         if (!resp.ok)
             throw await this.parseError(resp);
@@ -118,11 +145,11 @@ export class Transport {
     }
     /** DELETE path; parse JSON response (or no body). */
     async deletePath(path, init) {
-        const resp = await this.fetchImpl(this.baseURL + path, {
+        const resp = await this.fetchWithAuthRetry(path, async () => ({
             method: "DELETE",
             headers: await this.authHeaders(),
             signal: init?.signal,
-        });
+        }));
         if (!resp.ok)
             throw await this.parseError(resp);
         if (init?.parse === "none")
@@ -132,11 +159,11 @@ export class Transport {
     /** HEAD path; surface status + selected response headers.  Used by
      *  exists / stat where the body would just be an opaque blob. */
     async head(path, init) {
-        const resp = await this.fetchImpl(this.baseURL + path, {
+        const resp = await this.fetchWithAuthRetry(path, async () => ({
             method: "HEAD",
             headers: await this.authHeaders(),
             signal: init?.signal,
-        });
+        }));
         return { status: resp.status, headers: resp.headers };
     }
     async jsonHeaders() {
