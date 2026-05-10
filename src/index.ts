@@ -40,6 +40,23 @@ export {
 export type { Model, ModelListOptions } from "./models.js";
 export { supportsVoiceClone, supportsInstructText, defaultVoice } from "./models.js";
 
+// Model options schema (input validation + capability introspection)
+export type {
+  Schema,
+  FieldSchema,
+  Constraint,
+  ConstraintKind,
+  Catalog,
+} from "./model_options.js";
+export {
+  getOptionsSchema,
+  acceptsField,
+  requiresField,
+  allowedValuesFor,
+} from "./model_options.js";
+export type { ValidationError } from "./validate.js";
+export { validateRequest } from "./validate.js";
+
 // Image
 export type {
   ImageGenerateParams,

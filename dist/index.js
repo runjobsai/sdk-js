@@ -10,6 +10,8 @@ export { BrowserAuth } from "./browser-auth.js";
 export { APIError } from "./errors.js";
 export { userMessage, systemMessage, assistantMessage, toolResultMessage, userMessageParts, textPart, imagePart, } from "./chat.js";
 export { supportsVoiceClone, supportsInstructText, defaultVoice } from "./models.js";
+export { getOptionsSchema, acceptsField, requiresField, allowedValuesFor, } from "./model_options.js";
+export { validateRequest } from "./validate.js";
 // Media helpers (shared by image + video + chat-multimodal)
 export { encodeImageUrl, decodeMediaUrl } from "./media.js";
 //# sourceMappingURL=index.js.map

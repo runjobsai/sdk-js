@@ -13,6 +13,10 @@ export type { ChatMessage, ContentPart, ChatTool, StreamOptions, ChatCompletionP
 export { userMessage, systemMessage, assistantMessage, toolResultMessage, userMessageParts, textPart, imagePart, } from "./chat.js";
 export type { Model, ModelListOptions } from "./models.js";
 export { supportsVoiceClone, supportsInstructText, defaultVoice } from "./models.js";
+export type { Schema, FieldSchema, Constraint, ConstraintKind, Catalog, } from "./model_options.js";
+export { getOptionsSchema, acceptsField, requiresField, allowedValuesFor, } from "./model_options.js";
+export type { ValidationError } from "./validate.js";
+export { validateRequest } from "./validate.js";
 export type { ImageGenerateParams, ImageResult, ImageUsage, ImageResponse, ImageEditParams, ImageFileInput, AsyncImageJob, } from "./image.js";
 export type { SpeechParams, SpeechResponse, TranscribeParams, TranscribeResponse, AudioFileInput, } from "./audio.js";
 export type { VideoGenerateParams, VideoTask, VideoStatus, VideoUsageTokens, WaitOptions, } from "./video.js";
