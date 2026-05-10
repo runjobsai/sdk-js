@@ -172,6 +172,27 @@ export class FilesService {
     );
   }
 
+  /**
+   * Bulk delete: removes every object whose path starts with `prefix`
+   * AND (when set) matches `glob`.  Returns the count of deleted
+   * objects.  Refuses an empty prefix + empty glob — the caller must
+   * be explicit about wiping the project namespace.
+   *
+   *   client.files.deleteMany({ prefix: "tmp/" })          // wipe a directory
+   *   client.files.deleteMany({ glob: "**\/*.tmp" })       // wipe by pattern
+   *   client.files.deleteMany({ prefix: "logs/", glob: "*.bak" })
+   */
+  async deleteMany(
+    opts: { prefix?: string; glob?: string },
+    init?: { signal?: AbortSignal },
+  ): Promise<{ deleted: number }> {
+    return this.transport.postJSON<{ deleted: number }>(
+      "/v1/files/delete",
+      { prefix: opts.prefix ?? "", glob: opts.glob ?? "" },
+      init,
+    );
+  }
+
   /** Atomic rename (copy + delete server-side). */
   async move(from: string, to: string, init?: { signal?: AbortSignal }): Promise<FileObject> {
     return this.transport.postJSON<FileObject>("/v1/files/move", { from, to }, init);

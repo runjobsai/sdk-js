@@ -114,6 +114,24 @@ export declare class FilesService {
     }): Promise<void>;
     /** List objects.  Pass an empty / omitted prefix for the root. */
     list(opts?: ListOptions): Promise<FileListResult>;
+    /**
+     * Bulk delete: removes every object whose path starts with `prefix`
+     * AND (when set) matches `glob`.  Returns the count of deleted
+     * objects.  Refuses an empty prefix + empty glob — the caller must
+     * be explicit about wiping the project namespace.
+     *
+     *   client.files.deleteMany({ prefix: "tmp/" })          // wipe a directory
+     *   client.files.deleteMany({ glob: "**\/*.tmp" })       // wipe by pattern
+     *   client.files.deleteMany({ prefix: "logs/", glob: "*.bak" })
+     */
+    deleteMany(opts: {
+        prefix?: string;
+        glob?: string;
+    }, init?: {
+        signal?: AbortSignal;
+    }): Promise<{
+        deleted: number;
+    }>;
     /** Atomic rename (copy + delete server-side). */
     move(from: string, to: string, init?: {
         signal?: AbortSignal;
