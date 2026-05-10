@@ -105,6 +105,14 @@ export interface VideoStatus {
   usage_tokens?: VideoUsageTokens;
   created_at?: number;
   updated_at?: number;
+  /**
+   * Human-readable credit line that the client SHOULD display alongside
+   * the video. Populated by stock-library models (Pexels) whose terms
+   * of service require crediting the contributor; AI generators leave
+   * it empty. Render verbatim — don't try to parse the format. See
+   * ImageResult.attribution for the same convention.
+   */
+  attribution?: string;
 }
 
 /* ------------------------------------------------------------------ */
