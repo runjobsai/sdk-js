@@ -41,18 +41,103 @@ The default base URL is `https://api.runjobs.ai`. Override with `new RunJobs({ a
 
 ### Models
 
-List available models with pricing and capability metadata.
+List available models with pricing, capability tags, and the
+structured input schema.
 
 ```ts
 const all = await client.models.list();
 
 // Filter server-side by capability
-const textModels = await client.models.list({ capability: "text" });
+const videoModels = await client.models.list({ capability: "video_generation" });
 
-for (const m of textModels) {
-  console.log(`${m.id}  in=${m.input_price_per_mtok} out=${m.output_price_per_mtok} pips/MTok`);
+for (const m of videoModels) {
+  // capability_tags is the auto-derived "what this model can actually
+  // do" array — much more informative than the broad capability bucket.
+  const ids = (m.capability_tags ?? []).map(t => t.id).join(",");
+  console.log(`${m.id.padEnd(30)} [${ids}]  in=${m.input_price_per_mtok} out=${m.output_price_per_mtok} pips/MTok`);
+  // → "Seedance 2.0  [t2v,first_last_frame,reference,audio_track]  in=0 out=0 pips/MTok"
+}
+
+// hasCapabilityTag for quick filter checks (use stable IDs, not labels):
+import { hasCapabilityTag } from "@runjobsai/sdk";
+for (const m of videoModels) {
+  if (hasCapabilityTag(m, "first_last_frame")) {
+    console.log(m.id, "supports first/last keyframe input");
+  }
 }
 ```
+
+Tag vocabulary (per capability):
+
+| Capability         | Stable IDs |
+|--------------------|------------|
+| `video_generation` | `t2v`, `i2v`, `v2v`, `a2v`, `first_last_frame`, `reference`, `motion_transfer`, `audio_track` |
+| `image_generation` | `t2i`, `i2i`, `inpaint` |
+| `text_to_speech`   | `tts`, `voice_clone`, `instruct`, `emotion`, `voice_catalog` |
+| `speech_to_text`   | `stt`, `timestamps` |
+| `embedding`        | `embedding` |
+| `text` / `vision`  | `chat`, `vision` |
+| `computer_use`     | `computer_use` |
+
+The `Tag.label` field is a human-readable English string
+(`"Image-to-Video"`, `"First/Last Frame"`, …) — translate / re-style on
+your side. **Filter on `Tag.id`**; labels can shift between gateway
+versions.
+
+### Model Capabilities & Validation (Options Schema)
+
+Each model row carries a typed `Schema` describing exactly which
+request fields it accepts, with bounds, enums, defaults, roles, and
+cross-field constraints. Use it to build dynamic UIs and to validate
+request bodies *before* shipping them to the gateway.
+
+```ts
+import {
+  getOptionsSchema, acceptsField, requiresField, allowedValuesFor,
+  validateRequest,
+} from "@runjobsai/sdk";
+
+const list = await client.models.list({ capability: "text_to_speech" });
+const cosy = list.find(m => m.id === "CosyVoice")!;
+
+const schema = getOptionsSchema(cosy); // typed Schema | null
+
+// Quick presence checks — handy for "should I render this UI chip" decisions.
+if (acceptsField(cosy, "reference_audio_url")) { /* show voice-clone uploader */ }
+if (requiresField(cosy, "source_audio_url"))   { /* mark this field with a red star */ }
+const allowed = allowedValuesFor(cosy, "emotion"); // unknown[] | null
+
+// Voice catalog (id + name + gender + language + preview_url, ...) lives
+// on the schema — not on the legacy options bag.
+if (schema?.catalog) {
+  for (const v of schema.catalog.voices ?? []) {
+    console.log(`${v.id}  ${v.name}  ${v.gender}  ${v.language}`);
+  }
+  console.log("Emotions:", schema.catalog.emotions);
+}
+
+// Or if you only need the IDs (no metadata), the gateway also exposes
+// them as a top-level convenience field.
+console.log("Voice IDs:", cosy.available_voices);
+
+// Pre-flight validate a request body before sending — catches missing
+// required fields, out-of-range numbers, mutually-exclusive combos,
+// pixel-bounds violations, etc.
+const errs = validateRequest(schema, {
+  input: "Hello",
+  voice: "alloy",
+  reference_audio_url: "https://x/sample.wav", // mutex violation: voice XOR reference
+});
+for (const e of errs) console.log(`  ${e.field}: ${e.reason}`);
+// → "voice/reference_audio_url: at most one of voice, reference_audio_url may be set"
+```
+
+Constraint vocabulary the validator understands: `any_of_required`,
+`mutually_exclusive`, `group_mutex` (block-level XOR — e.g.
+Seedance/Veo "keyframe block XOR reference block"), `requires_all`
+(when X is set, Y must also be set — e.g. `last_frame_url` requires
+`first_frame_url`), `pixel_bounds`. Unknown constraint kinds are
+silently skipped (forward-compat with newer gateway versions).
 
 ### Chat
 
@@ -107,7 +192,7 @@ const img = await client.image.generate("MiniMax Image-01", {
 // "https://api.runjobs.ai/v1/blobs/<id>" (async). Either way, drop it
 // straight into <img src=…>; for raw bytes, decodeMediaUrl handles
 // both shapes uniformly.
-import { decodeMediaUrl } from "@runjobs/sdk";
+import { decodeMediaUrl } from "@runjobsai/sdk";
 const { bytes, contentType } = await decodeMediaUrl(img.data[0].url);
 console.log(`Got ${bytes.length} bytes (${contentType}), cost $${img.usage.total_cost.toFixed(6)}`);
 
@@ -126,18 +211,19 @@ const edited = await client.image.edit("GPT Image", {
 ### Text-to-Speech & Speech-to-Text
 
 ```ts
-// Voice metadata (id, name, gender, preview_url, supported_emotions) is
-// carried on the model row itself — fetch via models.get and read off
-// the options bag.
-const m = await client.models.get("MiniMax Speech 2.6 HD");
-const voices = (m.options?.voices ?? []) as Array<{
-  id: string; name: string; gender?: string; language?: string;
-}>;
-for (const v of voices) {
+// Voice catalog (id + name + gender + language + preview_url + …)
+// lives on the model's options Schema — see "Model Capabilities &
+// Validation" above for the full pattern. Quick lookup:
+import { getOptionsSchema } from "@runjobsai/sdk";
+
+const list = await client.models.list({ capability: "text_to_speech" });
+const minimax = list.find(m => m.id === "MiniMax Speech 2.6 HD")!;
+const schema = getOptionsSchema(minimax);
+for (const v of schema?.catalog?.voices ?? []) {
   console.log(`${v.id}  ${v.name}  ${v.gender ?? ""}  ${v.language ?? ""}`);
 }
-console.log("Emotions:", m.options?.supported_emotions);
-// e.g. ["happy", "sad", "angry", "fearful", "disgusted", "surprised", "calm", "whisper"]
+console.log("Emotions:", schema?.catalog?.emotions);
+// → ["happy","sad","angry","fearful","disgusted","surprised","calm","whisper"]
 
 // TTS (basic)
 import { writeFile } from "node:fs/promises";
@@ -253,14 +339,32 @@ const resp = await client.chat.create(
 
 ## API Reference
 
+### Services
+
 | Service          | Methods                                        | Description                                  |
 | ---------------- | ---------------------------------------------- | -------------------------------------------- |
 | `client.chat`    | `create`, `stream`                             | OpenAI-compatible chat completions           |
-| `client.models`  | `list`                                         | Model catalog with pricing and capabilities  |
+| `client.models`  | `list`                                         | Model catalog with pricing, capability tags, and options schema |
 | `client.image`   | `generate`, `edit`, `generateAsync`            | Image generation and editing                 |
-| `client.audio`   | `speech`, `transcribe`                         | Text-to-speech and transcription (voice catalog now on the model row via `models.get`) |
+| `client.audio`   | `speech`, `transcribe`                         | Text-to-speech and transcription (voice catalog on `getOptionsSchema(model).catalog`) |
 | `client.video`   | `generate`, `getStatus`, `wait`, `getContent`  | Async video generation                       |
 | `client.computer`| `step`                                         | Computer use (AI GUI control)                |
+
+### Model helpers (importable functions)
+
+Standalone functions that take a `Model` (or `Schema`) — kept outside
+the service classes so they're tree-shakeable:
+
+| Helper | Returns | Use for |
+|--------|---------|---------|
+| `hasCapabilityTag(model, id)` | `boolean` | Filter models by stable capability tag (`"i2v"`, `"voice_clone"`, …). |
+| `model.capability_tags` | `Tag[] \| undefined` | Iterate `{id, label}` for display chips. |
+| `getOptionsSchema(model)` | `Schema \| null` | Typed view of the model's input contract — inputs, constraints, catalog. |
+| `acceptsField(model, name)` | `boolean` | Does the model accept this request field at all? |
+| `requiresField(model, name)` | `boolean` | Is this field required (red-star UI)? |
+| `allowedValuesFor(model, name)` | `unknown[] \| null` | Discrete enum for dropdown options, or null. |
+| `model.available_voices` | `string[] \| undefined` | TTS-only: voice IDs the model accepts (top-level convenience field). |
+| `validateRequest(schema, req)` | `ValidationError[]` | Pre-flight validate a request body against the schema before submitting. |
 
 ## Compatibility
 

@@ -37,8 +37,13 @@ export {
 } from "./chat.js";
 
 // Models
-export type { Model, ModelListOptions } from "./models.js";
-export { supportsVoiceClone, supportsInstructText, defaultVoice } from "./models.js";
+export type { Model, ModelListOptions, Tag } from "./models.js";
+export {
+  hasCapabilityTag,
+  supportsVoiceClone,
+  supportsInstructText,
+  defaultVoice,
+} from "./models.js";
 
 // Model options schema (input validation + capability introspection)
 export type {
