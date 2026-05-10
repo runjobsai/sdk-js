@@ -51,10 +51,15 @@ export interface FieldSchema {
         [k: string]: unknown;
     };
 }
-export type ConstraintKind = "any_of_required" | "mutually_exclusive" | "requires_all" | "pixel_bounds";
+export type ConstraintKind = "any_of_required" | "mutually_exclusive" | "group_mutex" | "requires_all" | "pixel_bounds";
 export interface Constraint {
     kind: ConstraintKind;
     fields?: string[];
+    /**
+     * Used by `group_mutex`: at most one group may have any field set.
+     * Fields inside the same group can co-exist.
+     */
+    groups?: string[][];
     when?: string;
     then?: string[];
     min?: number;

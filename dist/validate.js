@@ -102,6 +102,28 @@ function validateConstraint(c, req) {
             }
             return [];
         }
+        case "group_mutex": {
+            const groups = c.groups ?? [];
+            const activeGroups = [];
+            const activeFields = [];
+            for (const g of groups) {
+                const setHere = g.filter((f) => f in req && !isEmpty(req[f]));
+                if (setHere.length > 0) {
+                    activeGroups.push(g);
+                    activeFields.push(...setHere);
+                }
+            }
+            if (activeGroups.length > 1) {
+                const labels = groups.map((g) => `[${g.join("+")}]`).join(" or ");
+                return [
+                    {
+                        field: activeFields.join("/"),
+                        reason: `at most one of ${labels} may be used (got: ${activeFields.join(", ")})`,
+                    },
+                ];
+            }
+            return [];
+        }
         case "requires_all": {
             const whenName = c.when;
             if (!whenName)

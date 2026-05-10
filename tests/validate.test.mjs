@@ -154,6 +154,49 @@ test("mutually_exclusive — both set fails", () => {
   assert.notEqual(errs.length, 0);
 });
 
+test("group_mutex — within-group co-exists, across-group fails", () => {
+  const s = newSchema(
+    {
+      first_frame_url: { type: "url", presence: "optional" },
+      last_frame_url: { type: "url", presence: "optional" },
+      reference_image_urls: { type: "url[]", presence: "optional" },
+      reference_video_urls: { type: "url[]", presence: "optional" },
+    },
+    {
+      kind: "group_mutex",
+      groups: [
+        ["first_frame_url", "last_frame_url"],
+        ["reference_image_urls", "reference_video_urls"],
+      ],
+    },
+  );
+  // Empty request passes.
+  assert.equal(validateRequest(s, {}).length, 0);
+  // Within-group co-existence passes.
+  assert.equal(
+    validateRequest(s, {
+      first_frame_url: "https://x/a.png",
+      last_frame_url: "https://x/b.png",
+    }).length,
+    0,
+  );
+  assert.equal(
+    validateRequest(s, {
+      reference_image_urls: ["https://x/r.png"],
+      reference_video_urls: ["https://x/r.mp4"],
+    }).length,
+    0,
+  );
+  // Across-group → fail.
+  assert.notEqual(
+    validateRequest(s, {
+      first_frame_url: "https://x/a.png",
+      reference_image_urls: ["https://x/r.png"],
+    }).length,
+    0,
+  );
+});
+
 test("requires_all — when set without then fails", () => {
   const s = newSchema(
     {
