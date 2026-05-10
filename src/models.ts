@@ -12,8 +12,9 @@ export interface Model {
   provider?: string;
   /**
    * Server-derived "what this model can actually do" tags
-   * (e.g. {id:"t2v", label:"文生视频"}, {id:"i2v", label:"图生视频"}).
+   * (e.g. {id:"t2v", label:"Text-to-Video"}, {id:"i2v", label:"Image-to-Video"}).
    * Use `hasCapabilityTag` for stable filter checks; iterate for display.
+   * Labels are in English — frontends localise on their side.
    */
   capability_tags?: Tag[];
   options?: Record<string, unknown>;
