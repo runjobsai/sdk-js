@@ -26,6 +26,30 @@ export interface FieldSchema {
     max_items?: number;
     /** Semantic hint for media-input fields. */
     role?: "source" | "reference" | "motion";
+    /** Human-readable display label. Falls back to the field name. */
+    label?: string;
+    /** One-sentence tooltip / sub-text explainer. */
+    help?: string;
+    /**
+     * Widget override hint:
+     *   "textarea"     — large multi-line string
+     *   "slider"       — numeric with min/max
+     *   "radio"        — small enum
+     *   "voice_picker" — string with values from catalog.voices
+     *   "code"         — long string with syntax highlighting
+     * Unknown values fall back to the type default (forward-compat).
+     */
+    widget?: string;
+    /**
+     * Nested presentational hints:
+     *   "group" (string) — sectional grouping ("main"/"advanced"/"output").
+     *   "order" (int)    — display order within the group; lower first.
+     */
+    ui?: {
+        group?: string;
+        order?: number;
+        [k: string]: unknown;
+    };
 }
 export type ConstraintKind = "any_of_required" | "mutually_exclusive" | "requires_all" | "pixel_bounds";
 export interface Constraint {
