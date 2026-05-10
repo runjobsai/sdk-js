@@ -35,6 +35,24 @@ export interface ListOptions {
   prefix?: string;
   cursor?: string;
   limit?: number;
+  /**
+   * Shell-style pattern, post-filtered after the underlying S3 list:
+   *   *      any chars except `/`
+   *   **     any chars including `/`
+   *   ?      single non-slash char
+   *   [abc]  character class
+   *
+   * Examples:
+   *   client.files.list({ glob: "*.png" })
+   *   client.files.list({ glob: "projects/*\/assets/*.png" })
+   *   client.files.list({ prefix: "projects/", glob: "**\/*.wav" })
+   *
+   * S3 has no native glob — the gateway extracts the longest literal
+   * head of the pattern as the underlying prefix scan, then filters
+   * the rest in process.  Patterns must match the WHOLE path; no
+   * implicit anchoring needed.
+   */
+  glob?: string;
   signal?: AbortSignal;
 }
 
@@ -146,6 +164,7 @@ export class FilesService {
     if (opts?.prefix) params.set("prefix", opts.prefix);
     if (opts?.cursor) params.set("cursor", opts.cursor);
     if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.glob) params.set("glob", opts.glob);
     const qs = params.toString();
     return this.transport.getJSON<FileListResult>(
       "/v1/files" + (qs ? "?" + qs : ""),

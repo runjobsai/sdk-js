@@ -83,6 +83,8 @@ export class FilesService {
             params.set("cursor", opts.cursor);
         if (opts?.limit)
             params.set("limit", String(opts.limit));
+        if (opts?.glob)
+            params.set("glob", opts.glob);
         const qs = params.toString();
         return this.transport.getJSON("/v1/files" + (qs ? "?" + qs : ""), opts?.signal ? { signal: opts.signal } : undefined);
     }
