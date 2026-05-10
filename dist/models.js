@@ -1,3 +1,6 @@
+/** True iff `model.capability_tags` includes a tag with the given stable ID. */
+export const hasCapabilityTag = (model, id) => Array.isArray(model.capability_tags) &&
+    model.capability_tags.some((t) => t.id === id);
 /** True iff the gateway flag in `options[key]` is set. Accepts bool or numeric 1. */
 function optBool(model, key) {
     const v = model.options?.[key];

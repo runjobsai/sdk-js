@@ -15,7 +15,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 // Helper: build a Schema literal in one line.
 const newSchema = (inputs, ...constraints) => ({
-  version: 1,
   inputs,
   constraints,
 });

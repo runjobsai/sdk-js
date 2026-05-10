@@ -7,8 +7,6 @@ import type { Model } from "./models.js";
 
 /** Wire-format options shape returned by /v1/models. */
 export interface Schema {
-  /** Schema version stamp. SDKs refuse to validate against unknown versions. */
-  version: number;
   /**
    * Per-field constraints, keyed by canonical request field name
    * (matching the JSON keys on Image/Video/Speech/Embed/Transcribe

@@ -9,6 +9,12 @@ export interface Model {
     object: string;
     capability: string;
     provider?: string;
+    /**
+     * Server-derived "what this model can actually do" tags
+     * (e.g. {id:"t2v", label:"文生视频"}, {id:"i2v", label:"图生视频"}).
+     * Use `hasCapabilityTag` for stable filter checks; iterate for display.
+     */
+    capability_tags?: Tag[];
     options?: Record<string, unknown>;
     input_price_per_mtok: number;
     output_price_per_mtok: number;
@@ -19,6 +25,16 @@ export interface Model {
     icon_url?: string;
     available_voices?: string[];
 }
+/**
+ * One capability tag. Mirrors options_schema.Tag on the gateway. IDs
+ * are stable across releases; Labels are subject to translation.
+ */
+export interface Tag {
+    id: string;
+    label: string;
+}
+/** True iff `model.capability_tags` includes a tag with the given stable ID. */
+export declare const hasCapabilityTag: (model: Model, id: string) => boolean;
 export interface ModelListOptions {
     /** Filter to one capability (e.g. "text", "vision", "image", "tts"). */
     capability?: string;
