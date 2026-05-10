@@ -29,6 +29,16 @@ export interface ImageResult {
   url: string;
   revised_prompt?: string;
   size?: string;
+  /**
+   * Human-readable credit line that the client SHOULD display
+   * alongside the image. Populated by stock-library models (Pexels)
+   * whose terms of service require crediting the photographer;
+   * AI-generation models leave it empty. Render verbatim — don't
+   * try to parse the format.
+   *
+   * Example: "Photo by Jane Doe on Pexels (https://www.pexels.com/photo/12345/)"
+   */
+  attribution?: string;
 }
 
 export interface ImageUsage extends Usage {
