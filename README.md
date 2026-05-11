@@ -261,6 +261,17 @@ const transcript = await client.audio.transcribe("OpenAI/Whisper", {
 });
 console.log(transcript.text);
 console.log(`Cost: $${transcript.usage.total_cost.toFixed(6)}`);
+
+// STT — async variant (use for long audio: lectures / podcasts /
+// multi-hour recordings where Whisper can take minutes). Same
+// TranscribeResponse shape as transcribe().
+const podcastBytes = await readFile("podcast-2h.mp3");
+const long = await client.audio.transcribeAsync("OpenAI/Whisper", {
+  file: { data: podcastBytes, filename: "podcast-2h.mp3" },
+  response_format: "verbose_json",
+  timestamp_granularities: ["segment"],
+});
+console.log(long.text);
 ```
 
 ### Video Generation (Async)
@@ -356,7 +367,7 @@ const resp = await client.chat.create(
 | `client.chat`    | `create`, `stream`                             | OpenAI-compatible chat completions           |
 | `client.models`  | `list`                                         | Model catalog with pricing, capability tags, and options schema |
 | `client.image`   | `generate`, `edit`, `generateAsync`            | Image generation and editing                 |
-| `client.audio`   | `speech`, `speechAsync`, `transcribe`          | Text-to-speech (sync + async submit/poll for >100s jobs) and transcription (voice catalog on `getOptionsSchema(model).catalog`) |
+| `client.audio`   | `speech`, `speechAsync`, `transcribe`, `transcribeAsync` | Text-to-speech and transcription. Each has a sync method + an async submit/poll variant for jobs that exceed Cloudflare's 100s ceiling (long music, hour-plus audio). Voice catalog on `getOptionsSchema(model).catalog` |
 | `client.video`   | `generate`, `getStatus`, `wait`, `getContent`  | Async video generation                       |
 | `client.computer`| `step`                                         | Computer use (AI GUI control)                |
 

@@ -62,6 +62,24 @@ export class AudioService {
         const form = buildTranscribeForm(model, params);
         return this.transport.postMultipart("/v1/audio/transcriptions", form, init);
     }
+    /**
+     * Async equivalent of `transcribe()`. Submits the upload, polls
+     * every ~3s until terminal, returns the same `TranscribeResponse`.
+     * Use this for long audio (lectures, podcasts, multi-hour
+     * recordings) where Whisper can take minutes — well past
+     * Cloudflare's ~100s sync ceiling.
+     *
+     * Caller's `signal` deadline bounds the poll wait. Without one,
+     * an internal 10-minute cap applies.
+     */
+    async transcribeAsync(model, params, init) {
+        const form = buildTranscribeForm(model, params);
+        const submit = await this.transport.postMultipart("/v1/async/audio/transcriptions", form, init);
+        if (!submit.id) {
+            throw new Error("runjobs: transcribe submit response missing job id");
+        }
+        return waitTranscribeJob(this.transport, submit.id, init);
+    }
 }
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -109,6 +127,59 @@ async function waitSpeechJob(transport, jobId, init) {
         // queued | running → wait + retry.
         await sleep(interval, init?.signal);
     }
+}
+/**
+ * Polls the gateway's async transcribe-status endpoint until terminal,
+ * then assembles a TranscribeResponse from the final payload. Used by
+ * `AudioService.transcribeAsync`.
+ */
+async function waitTranscribeJob(transport, jobId, init) {
+    const path = `/v1/async/audio/transcriptions/${encodeURIComponent(jobId)}`;
+    const interval = init?.pollIntervalMs ?? 3000;
+    await sleep(2000, init?.signal);
+    const internalDeadline = Date.now() + 10 * 60 * 1000;
+    for (;;) {
+        if (init?.signal?.aborted) {
+            throw new DOMException("transcribe poll aborted", "AbortError");
+        }
+        if (!init?.signal && Date.now() > internalDeadline) {
+            throw new Error("runjobs: transcribe job timed out (10 min internal cap)");
+        }
+        const status = await transport.getJSON(path, init);
+        switch (status.status) {
+            case "succeeded":
+                return assembleTranscribeResponse(status);
+            case "failed":
+                throw new Error(status.error || "runjobs: transcribe job failed");
+            case "queued":
+            case "running":
+                await sleep(interval, init?.signal);
+                break;
+            default:
+                throw new Error(`runjobs: unknown transcribe job status ${JSON.stringify(status.status)}`);
+        }
+    }
+}
+/**
+ * Pulls canonical text + usage out of a succeeded transcribe-status
+ * payload, leaves the rest under .raw — matches the sync response
+ * shape produced by `transcribe()`.
+ */
+function assembleTranscribeResponse(payload) {
+    const out = {
+        text: payload.text ?? "",
+        usage: payload.usage ?? { total_cost: 0 },
+    };
+    const raw = {};
+    for (const [k, v] of Object.entries(payload)) {
+        if (k === "text" || k === "usage" || k === "id" || k === "status")
+            continue;
+        raw[k] = v;
+    }
+    if (Object.keys(raw).length > 0) {
+        out.raw = raw;
+    }
+    return out;
 }
 function sleep(ms, signal) {
     return new Promise((resolve, reject) => {

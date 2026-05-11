@@ -109,5 +109,19 @@ export declare class AudioService {
     transcribe(model: string, params: TranscribeParams, init?: {
         signal?: AbortSignal;
     }): Promise<TranscribeResponse>;
+    /**
+     * Async equivalent of `transcribe()`. Submits the upload, polls
+     * every ~3s until terminal, returns the same `TranscribeResponse`.
+     * Use this for long audio (lectures, podcasts, multi-hour
+     * recordings) where Whisper can take minutes — well past
+     * Cloudflare's ~100s sync ceiling.
+     *
+     * Caller's `signal` deadline bounds the poll wait. Without one,
+     * an internal 10-minute cap applies.
+     */
+    transcribeAsync(model: string, params: TranscribeParams, init?: {
+        signal?: AbortSignal;
+        pollIntervalMs?: number;
+    }): Promise<TranscribeResponse>;
 }
 //# sourceMappingURL=audio.d.ts.map
