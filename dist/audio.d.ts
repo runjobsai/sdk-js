@@ -32,6 +32,15 @@ export interface SpeechParams {
     /** Transcript of the reference clip — improves CosyVoice quality. */
     reference_text?: string;
     user?: string;
+    /**
+     * Vendor-specific top-level fields the canonical params don't model.
+     * Used for music-generation models on the TTS bucket — ACE-Step needs
+     * `tags` (genre, required), `duration`, `seed`, `scheduler`, etc.
+     * The SDK spreads these at the request body's TOP LEVEL (not nested
+     * under "extra") to match the gateway's extractSpeechExtra contract.
+     * Canonical fields above always win over extra keys with the same name.
+     */
+    extra?: Record<string, unknown>;
 }
 export interface SpeechResponse {
     /** Decoded audio bytes. */
@@ -76,6 +85,25 @@ export declare class AudioService {
      */
     speech(model: string, params: SpeechParams, init?: {
         signal?: AbortSignal;
+    }): Promise<SpeechResponse>;
+    /**
+     * Async equivalent of `speech()`. Submits the job to the gateway's
+     * async TTS endpoint, polls every ~3s until terminal, then decodes
+     * the result audio_url. Use this when a request may exceed the
+     * ~100s origin timeout — ACE-Step music generation at high quality,
+     * large CosyVoice batches, etc. The sync `speech()` method is the
+     * right choice for short-clip TTS that fits inside Cloudflare's
+     * timeout (skips the submit + poll round-trips).
+     *
+     * Returns the same `SpeechResponse` shape as `speech()` — `data` +
+     * `usage` — so callers can swap the two methods with no other change.
+     *
+     * Caller's `signal` deadline bounds the poll wait. Without one,
+     * an internal 10-minute cap applies.
+     */
+    speechAsync(model: string, params: SpeechParams, init?: {
+        signal?: AbortSignal;
+        pollIntervalMs?: number;
     }): Promise<SpeechResponse>;
     /** Transcribe audio to text via multipart upload. */
     transcribe(model: string, params: TranscribeParams, init?: {

@@ -243,6 +243,16 @@ await client.audio.speech("MiniMax Speech 2.6 HD", {
   emotion: "happy",
 });
 
+// TTS — async variant (use when generation can take longer than ~100s,
+// e.g. ACE-Step music at high quality / large CosyVoice batches).
+// Returns the same SpeechResponse shape as speech, after submit + poll.
+const song = await client.audio.speechAsync("ACE-Step", {
+  input: "[verse]\nUnder the stars tonight",
+  extra: { tags: "indie rock, melancholic", duration: 60 },
+});
+await writeFile("song.wav", song.data);
+console.log(`Cost: $${song.usage.total_cost.toFixed(6)}`);
+
 // STT
 import { readFile } from "node:fs/promises";
 const audioBytes = await readFile("recording.mp3");
@@ -346,7 +356,7 @@ const resp = await client.chat.create(
 | `client.chat`    | `create`, `stream`                             | OpenAI-compatible chat completions           |
 | `client.models`  | `list`                                         | Model catalog with pricing, capability tags, and options schema |
 | `client.image`   | `generate`, `edit`, `generateAsync`            | Image generation and editing                 |
-| `client.audio`   | `speech`, `transcribe`                         | Text-to-speech and transcription (voice catalog on `getOptionsSchema(model).catalog`) |
+| `client.audio`   | `speech`, `speechAsync`, `transcribe`          | Text-to-speech (sync + async submit/poll for >100s jobs) and transcription (voice catalog on `getOptionsSchema(model).catalog`) |
 | `client.video`   | `generate`, `getStatus`, `wait`, `getContent`  | Async video generation                       |
 | `client.computer`| `step`                                         | Computer use (AI GUI control)                |
 
