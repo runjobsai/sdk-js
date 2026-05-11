@@ -126,10 +126,29 @@ export class FilesService {
      * Pipeline several file ops in one round trip.  Operations execute
      * sequentially server-side; one op failing does not abort the rest.
      * Inspect each result.ok individually.
+     *
+     * Auto-chunks: the gateway caps a single batch at 64 ops and returns
+     * 400 "too many ops" above that.  This method splits long input into
+     * 30-op chunks, awaits each chunk in order, and concatenates the
+     * results — so callers can hand it 1000 ops in a single call.
+     * Chunks run serially (not in parallel) to preserve the
+     * "operations execute in submission order" contract.
      */
     async batch(ops, init) {
-        const resp = await this.transport.postJSON("/v1/files/batch", { ops }, init);
-        return resp.results;
+        if (ops.length === 0)
+            return [];
+        const chunkSize = 30;
+        if (ops.length <= chunkSize) {
+            const resp = await this.transport.postJSON("/v1/files/batch", { ops }, init);
+            return resp.results;
+        }
+        const all = [];
+        for (let i = 0; i < ops.length; i += chunkSize) {
+            const chunk = ops.slice(i, i + chunkSize);
+            const resp = await this.transport.postJSON("/v1/files/batch", { ops: chunk }, init);
+            all.push(...resp.results);
+        }
+        return all;
     }
 }
 //# sourceMappingURL=files.js.map

@@ -150,6 +150,13 @@ export declare class FilesService {
      * Pipeline several file ops in one round trip.  Operations execute
      * sequentially server-side; one op failing does not abort the rest.
      * Inspect each result.ok individually.
+     *
+     * Auto-chunks: the gateway caps a single batch at 64 ops and returns
+     * 400 "too many ops" above that.  This method splits long input into
+     * 30-op chunks, awaits each chunk in order, and concatenates the
+     * results — so callers can hand it 1000 ops in a single call.
+     * Chunks run serially (not in parallel) to preserve the
+     * "operations execute in submission order" contract.
      */
     batch(ops: BatchOp[], init?: {
         signal?: AbortSignal;
