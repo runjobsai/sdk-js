@@ -113,6 +113,42 @@ for (const m of videoModels) {
 
 `Tag.label` is English-only; localise on your side. Always filter on `Tag.id`.
 
+#### `input_modalities` — what file types a chat model can analyse
+
+Chat models (`capability` `"text"` or `"vision"`) carry an `input_modalities` array listing the input shapes they accept. Mirrors Anthropic's and Gemini's own `inputModalities` field — operator-set on the gateway, surfaced verbatim. Use it to pick the right model **before** sending a request instead of catching a 400.
+
+| Value | Meaning |
+|---|---|
+| `"text"` | Plain text in `messages[].content` (always implied for chat) |
+| `"image"` | `{ type: "image_url", image_url: { url } }` content parts |
+| `"video"` | `{ type: "video_url", video_url: { url } }` content parts |
+| `"audio"` | `{ type: "audio_url", audio_url: { url } }` content parts |
+
+The list is open — new modality strings ride through without an SDK upgrade. Use the `acceptsModality` helper for stable checks:
+
+```ts
+import { acceptsModality } from "@runjobsai/sdk";
+
+const models = await client.models.list({ capability: "text" });
+
+// Pick a video-capable model
+const videoModel = models.find(m => acceptsModality(m, "video"));
+// → Gemini 3 Flash / Gemini 3 Vision / Gemini 3.1 Pro
+
+// Pick image-capable (includes Claude + GPT vision + every Gemini)
+const imageModels = models.filter(m => acceptsModality(m, "image"));
+```
+
+`input_modalities` is **absent** (not `[]` or `null`) for capabilities where it doesn't apply — embedding, image generation, TTS, STT, etc. Treat absence as "field not applicable" and don't rely on `length === 0` as a signal.
+
+Sending a content part the model doesn't accept (e.g. `video_url` to Claude) returns **400** at the gateway, before any tokens are billed:
+
+```
+{"error":{"message":"Claude does not accept video input. Use a Gemini model for video analysis.","type":"upstream_error","code":400}}
+```
+
+In `stream: true` mode the same error arrives as an SSE error chunk (OpenAI-compat) before `[DONE]`, so `openai-style` SDKs raise on iteration.
+
 ### Options schema — per-model field contract
 
 `getOptionsSchema(model)` returns the typed view of the model's input contract: which fields are accepted, their bounds / enums / defaults, cross-field constraints (XOR groups, requires-all, pixel bounds), plus a `catalog` of rich content (voices, emotions) an enum alone can't express.
@@ -179,8 +215,9 @@ for await (const chunk of client.chat.stream({
 **Multi-modal**:
 
 ```ts
-import { userMessageParts, textPart, imagePart } from "@runjobsai/sdk";
+import { userMessageParts, textPart, imagePart, videoPart, audioPart } from "@runjobsai/sdk";
 
+// Image — Claude / GPT-4o / every Gemini accept this
 await client.chat.create({
   model: "Claude Sonnet 4.6",
   messages: [
@@ -190,13 +227,24 @@ await client.chat.create({
     ),
   ],
 });
+
+// Video — Gemini 3.x only (check model.input_modalities first)
+await client.chat.create({
+  model: "Gemini 3 Vision",
+  messages: [
+    userMessageParts(
+      textPart("Summarise this clip"),
+      videoPart("https://example.com/clip.mp4"),
+    ),
+  ],
+});
 ```
 
-`ContentPart` supports `{ type: "text" | "image_url" | "video_url" | "audio_url" }`. Unsupported variants are rejected server-side with a clear error.
+`ContentPart` supports `{ type: "text" | "image_url" | "video_url" | "audio_url" }`. Pick the right model with `acceptsModality(m, "video")` first — unsupported variants are rejected server-side with a 400 (`Claude does not accept video input. Use a Gemini model…`).
 
 **Tool calling** — populate `tools: [{ type: "function", function: { name, description, parameters } }]`, read `choices[0].message.tool_calls`, return `toolResultMessage(toolCallId, jsonOutput)` on the next turn.
 
-Builders re-exported from the top level: `userMessage`, `systemMessage`, `assistantMessage`, `toolResultMessage`, `userMessageParts`, `textPart`, `imagePart`.
+Builders re-exported from the top level: `userMessage`, `systemMessage`, `assistantMessage`, `toolResultMessage`, `userMessageParts`, `textPart`, `imagePart`, `videoPart`, `audioPart`.
 
 ### `client.embeddings`
 
@@ -485,6 +533,8 @@ Browser-auth mode automatically retries once on `401` (with the cached token inv
 |--------|---------|-----|
 | `hasCapabilityTag(model, id)` | `boolean` | Filter by stable capability tag |
 | `model.capability_tags` | `Tag[]` | Iterate `{id, label}` for display chips |
+| `acceptsModality(model, "video")` | `boolean` | Does the chat model accept this input modality? |
+| `model.input_modalities` | `string[]?` | Raw modality list (chat-only field) |
 | `getOptionsSchema(model)` | `Schema \| null` | Typed view of the model's input contract |
 | `acceptsField(model, name)` | `boolean` | Does the model accept this field? |
 | `requiresField(model, name)` | `boolean` | Is this field required? |

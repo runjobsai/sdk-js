@@ -34,12 +34,15 @@ export {
   userMessageParts,
   textPart,
   imagePart,
+  videoPart,
+  audioPart,
 } from "./chat.js";
 
 // Models
 export type { Model, ModelListOptions, Tag } from "./models.js";
 export {
   hasCapabilityTag,
+  acceptsModality,
   supportsVoiceClone,
   supportsInstructText,
   defaultVoice,

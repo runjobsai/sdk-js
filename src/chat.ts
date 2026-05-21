@@ -149,6 +149,28 @@ export const imagePart = (
   image_url: detail ? { url, detail } : { url },
 });
 
+/**
+ * Video content part. Only supported by chat models whose
+ * input_modalities includes `"video"` (currently Gemini 3.x). Other
+ * models 400 at the gateway. URL may be http(s) or a
+ * `data:video/mp4;base64,...` inline upload.
+ */
+export const videoPart = (url: string): ContentPart => ({
+  type: "video_url",
+  video_url: { url },
+});
+
+/**
+ * Audio content part. Only supported by chat models whose
+ * input_modalities includes `"audio"` (currently Gemini 3.x). Other
+ * models 400 at the gateway. URL may be http(s) or a
+ * `data:audio/wav;base64,...` inline upload.
+ */
+export const audioPart = (url: string): ContentPart => ({
+  type: "audio_url",
+  audio_url: { url },
+});
+
 /* ------------------------------------------------------------------ */
 /* Service                                                             */
 /* ------------------------------------------------------------------ */

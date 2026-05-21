@@ -17,6 +17,20 @@ export interface Model {
    * Labels are in English — frontends localise on their side.
    */
   capability_tags?: Tag[];
+  /**
+   * Accepted input modalities for chat models. Omitted on capabilities
+   * where it doesn't apply (image generation, TTS, etc.). Mirrors
+   * Anthropic / Gemini's own `inputModalities` field — operator-set on
+   * the gateway, surfaced verbatim here.
+   *
+   * Canonical values: `"text"`, `"image"`, `"video"`, `"audio"`. The
+   * list is open — future modalities ride through without an SDK
+   * update. Use `acceptsModality` for the stable filter check.
+   *
+   * @example
+   *   const videoCapable = models.filter(m => acceptsModality(m, "video"));
+   */
+  input_modalities?: string[];
   options?: Record<string, unknown>;
   input_price_per_mtok: number;
   output_price_per_mtok: number;
@@ -41,6 +55,23 @@ export interface Tag {
 export const hasCapabilityTag = (model: Model, id: string): boolean =>
   Array.isArray(model.capability_tags) &&
   model.capability_tags.some((t) => t.id === id);
+
+/**
+ * True iff the chat model accepts the given input modality. Lets you
+ * filter by `"image"` / `"video"` / `"audio"` (or `"text"`, always
+ * true for chat models that set the field at all) without remembering
+ * whether the gateway uses canonical or aliased names.
+ *
+ * Returns `false` when `input_modalities` is unset — text-only is the
+ * conservative default.
+ *
+ * @example
+ *   const videoModels = (await client.models.list())
+ *     .filter(m => acceptsModality(m, "video"));
+ */
+export const acceptsModality = (model: Model, modality: string): boolean =>
+  Array.isArray(model.input_modalities) &&
+  model.input_modalities.includes(modality);
 
 export interface ModelListOptions {
   /** Filter to one capability (e.g. "text", "vision", "image", "tts"). */
