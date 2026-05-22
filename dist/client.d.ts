@@ -40,10 +40,12 @@ export interface ClientOptions {
     authProvider?: AuthProvider;
     /**
      * Show the floating identity badge in `runjobs` auth mode.
-     * Default `false` — bundles ship their own UI most of the time
-     * and the platform badge would clutter the page corner.  Set
-     * `true` for unauthenticated public bundles where the badge is
-     * the only sign-out affordance.
+     * **Default `true`** — the badge is now a desktop-ball-style
+     * real-time activity indicator (LED dot + progress ring around
+     * the avatar + click-through popover with active calls / recent
+     * completions / session totals). Set `false` only when the
+     * bundle ships its own status UI and you don't want the platform
+     * badge in the corner.
      */
     showIdentityBadge?: boolean;
     /**

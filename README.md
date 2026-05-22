@@ -59,7 +59,7 @@ For resource bundles embedded into runjobs.ai or shipped as standalone web apps.
 const client = new RunJobs({
   authProvider: "runjobs",
   project: "proj_abc",          // optional — pin to a specific project
-  showIdentityBadge: true,      // floating bottom-right pill; default false
+  showIdentityBadge: true,      // real-time activity badge bottom-right; default true
 });
 
 await client.chat.create({ ... });   // redirects to grant on first call

@@ -45,10 +45,12 @@ export interface ClientOptions {
   authProvider?: AuthProvider;
   /**
    * Show the floating identity badge in `runjobs` auth mode.
-   * Default `false` — bundles ship their own UI most of the time
-   * and the platform badge would clutter the page corner.  Set
-   * `true` for unauthenticated public bundles where the badge is
-   * the only sign-out affordance.
+   * **Default `true`** — the badge is now a desktop-ball-style
+   * real-time activity indicator (LED dot + progress ring around
+   * the avatar + click-through popover with active calls / recent
+   * completions / session totals). Set `false` only when the
+   * bundle ships its own status UI and you don't want the platform
+   * badge in the corner.
    */
   showIdentityBadge?: boolean;
   /**
@@ -143,17 +145,19 @@ export class RunJobs {
       // auth flow — that's where /api/sdk/grant lives.  Users overriding
       // baseURL explicitly (e.g. self-hosted runjobs) keep control.
       baseURL = baseURL ?? "https://www.runjobs.ai";
-      // Badge default: hidden.  Bundles overwhelmingly ship their
-      // own UI for the signed-in user, and the platform badge in
-      // the corner clutters the page.  Opt in via `showIdentityBadge`
-      // (or fall back to the legacy `hideIdentityBadge`-inversion for
-      // callers still on the old flag).
+      // Badge default: SHOWN. The badge is now a real-time activity
+      // indicator (LED + ring + popover) — useful enough that we'd
+      // rather have the rare "I already have my own UI" bundle opt
+      // OUT with `showIdentityBadge: false` than have every bundle
+      // miss the live feedback by default. The legacy
+      // `hideIdentityBadge` flag still wins when set, for callers
+      // that explicitly suppressed the badge under the old default.
       const showBadge =
         options.showIdentityBadge !== undefined
           ? options.showIdentityBadge
           : options.hideIdentityBadge !== undefined
             ? !options.hideIdentityBadge
-            : false;
+            : true;
       const auth = new BrowserAuth({
         origin: baseURL,
         hideBadge: !showBadge,

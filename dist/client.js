@@ -72,16 +72,18 @@ export class RunJobs {
             // auth flow — that's where /api/sdk/grant lives.  Users overriding
             // baseURL explicitly (e.g. self-hosted runjobs) keep control.
             baseURL = baseURL ?? "https://www.runjobs.ai";
-            // Badge default: hidden.  Bundles overwhelmingly ship their
-            // own UI for the signed-in user, and the platform badge in
-            // the corner clutters the page.  Opt in via `showIdentityBadge`
-            // (or fall back to the legacy `hideIdentityBadge`-inversion for
-            // callers still on the old flag).
+            // Badge default: SHOWN. The badge is now a real-time activity
+            // indicator (LED + ring + popover) — useful enough that we'd
+            // rather have the rare "I already have my own UI" bundle opt
+            // OUT with `showIdentityBadge: false` than have every bundle
+            // miss the live feedback by default. The legacy
+            // `hideIdentityBadge` flag still wins when set, for callers
+            // that explicitly suppressed the badge under the old default.
             const showBadge = options.showIdentityBadge !== undefined
                 ? options.showIdentityBadge
                 : options.hideIdentityBadge !== undefined
                     ? !options.hideIdentityBadge
-                    : false;
+                    : true;
             const auth = new BrowserAuth({
                 origin: baseURL,
                 hideBadge: !showBadge,
