@@ -7,6 +7,7 @@ import { ComputerService } from "./computer.js";
 import { FilesService } from "./files.js";
 import { EmbeddingsService } from "./embeddings.js";
 import { BrowserAuth, type BrowserUser } from "./browser-auth.js";
+import { SDKEvents } from "./events.js";
 /**
  * Auth strategy.
  *
@@ -109,6 +110,19 @@ export declare class RunJobs {
      * subscription, etc.).
      */
     readonly auth: BrowserAuth | null;
+    /**
+     * Runtime event bus for SDK-call telemetry. Every LLM-ish service
+     * (chat / embeddings / image / audio / video / computer) fires
+     * `request:start`, `request:streamDelta`, `request:end`, and
+     * `request:error` events here so UI overlays — like the bottom-right
+     * identity badge's activity ring — can render real-time state
+     * without business code threading anything through.
+     *
+     * Zero-cost when nobody subscribes (emit is a few property reads).
+     * Subscribe via `client.events.on("request:start", handler)` — the
+     * returned closure is the unsubscribe.
+     */
+    readonly events: SDKEvents;
     constructor(options?: ClientOptions);
     /** Force a redirect to the runjobs.ai grant page.  No-op in static
      *  auth mode or in Node. */

@@ -1,5 +1,6 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
 /** Single-step computer-use request — a screenshot + history → next action(s). */
 export interface ComputerStepParams {
     /**
@@ -42,7 +43,8 @@ export interface ComputerResponse {
 }
 export declare class ComputerService {
     private readonly transport;
-    constructor(transport: Transport);
+    private readonly events;
+    constructor(transport: Transport, events: SDKEvents);
     /**
      * Execute one step of a computer-use agent loop. Given a screenshot
      * and conversation history, returns the next action(s) the model

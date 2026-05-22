@@ -6,13 +6,15 @@
  * reaching into per-service modules.
  */
 export { RunJobs, RunJobs as Client, type ClientOptions, type AuthProvider } from "./client.js";
+export { SDKEvents, newRequestId, type RequestStartEvent, type RequestStreamDeltaEvent, type RequestEndEvent, type RequestErrorEvent, type SDKEventMap, type SDKCapability, type Unsubscribe, } from "./events.js";
+export { ActivityTracker, type ActiveCall, type CompletedCall, type SessionStats, type ActivitySnapshot, } from "./activity-tracker.js";
 export { BrowserAuth, type BrowserAuthOptions, type BrowserUser } from "./browser-auth.js";
 export { APIError } from "./errors.js";
 export type { Usage } from "./types.js";
 export type { ChatMessage, ContentPart, ChatTool, StreamOptions, ChatCompletionParams, ChatToolCall, ChatChoiceMessage, ChatChoice, ChatCompletion, ChatChunkDelta, ChatChunkChoice, ChatCompletionChunk, } from "./chat.js";
-export { userMessage, systemMessage, assistantMessage, toolResultMessage, userMessageParts, textPart, imagePart, } from "./chat.js";
+export { userMessage, systemMessage, assistantMessage, toolResultMessage, userMessageParts, textPart, imagePart, videoPart, audioPart, } from "./chat.js";
 export type { Model, ModelListOptions, Tag } from "./models.js";
-export { hasCapabilityTag, supportsVoiceClone, supportsInstructText, defaultVoice, } from "./models.js";
+export { hasCapabilityTag, acceptsModality, supportsVoiceClone, supportsInstructText, defaultVoice, } from "./models.js";
 export type { Schema, FieldSchema, Constraint, ConstraintKind, Catalog, } from "./model_options.js";
 export { getOptionsSchema, acceptsField, requiresField, allowedValuesFor, } from "./model_options.js";
 export type { ValidationError } from "./validate.js";

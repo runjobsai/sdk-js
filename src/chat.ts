@@ -1,5 +1,7 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
+import { wrapEvents, wrapStream } from "./event-wrap.js";
 
 /* ------------------------------------------------------------------ */
 /* Request types                                                       */
@@ -176,7 +178,10 @@ export const audioPart = (url: string): ContentPart => ({
 /* ------------------------------------------------------------------ */
 
 export class ChatService {
-  constructor(private readonly transport: Transport) {}
+  constructor(
+    private readonly transport: Transport,
+    private readonly events: SDKEvents,
+  ) {}
 
   /**
    * Create a chat completion (non-streaming).
@@ -188,10 +193,20 @@ export class ChatService {
     init?: { signal?: AbortSignal },
   ): Promise<ChatCompletion> {
     const body = { ...params, stream: false };
-    return this.transport.postJSON<ChatCompletion>(
-      "/v1/chat/completions",
-      body,
-      init,
+    return wrapEvents(
+      this.events,
+      { model: params.model, capability: "text" },
+      () =>
+        this.transport.postJSON<ChatCompletion>(
+          "/v1/chat/completions",
+          body,
+          init,
+        ),
+      (r) => ({
+        totalTokens: r.usage?.completion_tokens,
+        costUSD: r.usage?.total_cost,
+        finishReason: r.choices?.[0]?.finish_reason,
+      }),
     );
   }
 
@@ -207,6 +222,9 @@ export class ChatService {
    *   if (chunk.usage) cost = chunk.usage.total_cost;
    * }
    * ```
+   *
+   * Also fires `request:streamDelta` on `client.events` for each chunk
+   * that carried text — drives the badge's tokens/sec rate display.
    */
   async *stream(
     params: ChatCompletionParams,
@@ -217,15 +235,28 @@ export class ChatService {
       stream: true,
       stream_options: params.stream_options ?? { include_usage: true },
     };
-    const resp = await this.transport.postJSONStream(
-      "/v1/chat/completions",
-      body,
-      init,
+    const sourceGen = async function* (this: ChatService) {
+      const resp = await this.transport.postJSONStream(
+        "/v1/chat/completions",
+        body,
+        init,
+      );
+      if (!resp.body) {
+        throw new Error("runjobs: streaming response had no body");
+      }
+      yield* parseSSE<ChatCompletionChunk>(resp.body);
+    }.bind(this);
+    yield* wrapStream(
+      this.events,
+      { model: params.model, capability: "text" },
+      sourceGen,
+      (chunk) => ({
+        deltaText: chunk.choices?.[0]?.delta?.content ?? "",
+        completionTokens: chunk.usage?.completion_tokens,
+        costUSD: chunk.usage?.total_cost,
+        finishReason: chunk.choices?.[0]?.finish_reason ?? undefined,
+      }),
     );
-    if (!resp.body) {
-      throw new Error("runjobs: streaming response had no body");
-    }
-    yield* parseSSE<ChatCompletionChunk>(resp.body);
   }
 }
 

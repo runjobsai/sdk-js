@@ -1,11 +1,21 @@
+import { wrapEvents } from "./event-wrap.js";
 export class VideoService {
     transport;
-    constructor(transport) {
+    events;
+    constructor(transport, events) {
         this.transport = transport;
+        this.events = events;
     }
-    /** Submit a video generation task. */
+    /** Submit a video generation task.
+     *
+     * Telemetry note: only the submit step fires start/end on
+     * `client.events` — the per-call latency reflects the gateway
+     * accepting the job, NOT how long upstream takes to render. The
+     * caller's poll loop sees status flips but the SDK doesn't emit
+     * end events for those (would otherwise leave the badge "active"
+     * for as long as the upstream renders, sometimes minutes). */
     async generate(model, params, init) {
-        return this.transport.postJSON("/v1/videos/generations", { model, ...params }, init);
+        return wrapEvents(this.events, { model, capability: "video_generation" }, () => this.transport.postJSON("/v1/videos/generations", { model, ...params }, init));
     }
     /** Fetch the current status of a task. */
     async getStatus(taskID, init) {

@@ -1,6 +1,21 @@
 /** True iff `model.capability_tags` includes a tag with the given stable ID. */
 export const hasCapabilityTag = (model, id) => Array.isArray(model.capability_tags) &&
     model.capability_tags.some((t) => t.id === id);
+/**
+ * True iff the chat model accepts the given input modality. Lets you
+ * filter by `"image"` / `"video"` / `"audio"` (or `"text"`, always
+ * true for chat models that set the field at all) without remembering
+ * whether the gateway uses canonical or aliased names.
+ *
+ * Returns `false` when `input_modalities` is unset — text-only is the
+ * conservative default.
+ *
+ * @example
+ *   const videoModels = (await client.models.list())
+ *     .filter(m => acceptsModality(m, "video"));
+ */
+export const acceptsModality = (model, modality) => Array.isArray(model.input_modalities) &&
+    model.input_modalities.includes(modality);
 /** True iff the gateway flag in `options[key]` is set. Accepts bool or numeric 1. */
 function optBool(model, key) {
     const v = model.options?.[key];

@@ -8,6 +8,7 @@ import { ComputerService } from "./computer.js";
 import { FilesService } from "./files.js";
 import { EmbeddingsService } from "./embeddings.js";
 import { BrowserAuth } from "./browser-auth.js";
+import { SDKEvents } from "./events.js";
 const DEFAULT_BASE_URL = "https://api.runjobs.ai";
 /**
  * Top-level RunJobs SDK client.  Construct once, share across services.
@@ -48,6 +49,19 @@ export class RunJobs {
      * subscription, etc.).
      */
     auth = null;
+    /**
+     * Runtime event bus for SDK-call telemetry. Every LLM-ish service
+     * (chat / embeddings / image / audio / video / computer) fires
+     * `request:start`, `request:streamDelta`, `request:end`, and
+     * `request:error` events here so UI overlays — like the bottom-right
+     * identity badge's activity ring — can render real-time state
+     * without business code threading anything through.
+     *
+     * Zero-cost when nobody subscribes (emit is a few property reads).
+     * Subscribe via `client.events.on("request:start", handler)` — the
+     * returned closure is the unsubscribe.
+     */
+    events = new SDKEvents();
     constructor(options = {}) {
         const provider = options.authProvider ?? "static";
         let apiKeyResolver = options.apiKeyResolver;
@@ -71,6 +85,11 @@ export class RunJobs {
             const auth = new BrowserAuth({
                 origin: baseURL,
                 hideBadge: !showBadge,
+                // Pipe the shared event bus into BrowserAuth so the badge can
+                // render its real-time activity ring / LED / popover. Safe to
+                // pass even when the caller never subscribes — emit is a few
+                // property reads when nobody's listening.
+                events: this.events,
                 ...(options.project !== undefined && { project: options.project }),
             });
             this.auth = auth;
@@ -92,14 +111,20 @@ export class RunJobs {
             ...(onUnauthorized !== undefined && { onUnauthorized }),
             ...(options.fetch ? { fetchImpl: options.fetch } : {}),
         });
-        this.chat = new ChatService(transport);
+        // Service constructors receive the shared event bus so each call
+        // path (chat/embeddings/image/audio/video/computer) can emit
+        // start/end/error around its network operations. Files and Models
+        // intentionally don't take it — they're infrastructure, not
+        // user-facing LLM calls, and surfacing them would clutter the
+        // badge with /v1/models polls.
+        this.chat = new ChatService(transport, this.events);
         this.models = new ModelsService(transport);
-        this.image = new ImageService(transport);
-        this.audio = new AudioService(transport);
-        this.video = new VideoService(transport);
-        this.computer = new ComputerService(transport);
+        this.image = new ImageService(transport, this.events);
+        this.audio = new AudioService(transport, this.events);
+        this.video = new VideoService(transport, this.events);
+        this.computer = new ComputerService(transport, this.events);
         this.files = new FilesService(transport);
-        this.embeddings = new EmbeddingsService(transport);
+        this.embeddings = new EmbeddingsService(transport, this.events);
     }
     /** Force a redirect to the runjobs.ai grant page.  No-op in static
      *  auth mode or in Node. */

@@ -1,8 +1,11 @@
+import { wrapEvents } from "./event-wrap.js";
 /* ------------------------------------------------------------------ */
 export class ImageService {
     transport;
-    constructor(transport) {
+    events;
+    constructor(transport, events) {
         this.transport = transport;
+        this.events = events;
     }
     /**
      * Generate images from a text prompt via the synchronous endpoint.
@@ -10,7 +13,7 @@ export class ImageService {
      * use `generateAsync()` to avoid 100-second origin timeouts.
      */
     async generate(model, params, init) {
-        return this.transport.postJSON("/v1/images/generations", { model, ...params }, init);
+        return wrapEvents(this.events, { model, capability: "image_generation" }, () => this.transport.postJSON("/v1/images/generations", { model, ...params }, init), (r) => ({ costUSD: r.usage?.total_cost }));
     }
     /**
      * Async equivalent of `generate()`. Submits a job, polls until terminal,
@@ -21,7 +24,7 @@ export class ImageService {
      * The caller's `signal` deadline bounds the poll wait.
      */
     async generateAsync(model, params, init) {
-        return this.transport.postJSON("/v1/images/generations/async", { model, ...params, _poll_interval_ms: init?.pollIntervalMs }, init);
+        return wrapEvents(this.events, { model, capability: "image_generation" }, () => this.transport.postJSON("/v1/images/generations/async", { model, ...params, _poll_interval_ms: init?.pollIntervalMs }, init), (r) => ({ costUSD: r.usage?.total_cost }));
     }
     /**
      * Submit-only variant of `generate()`. Returns the gateway's job
@@ -32,9 +35,14 @@ export class ImageService {
      *
      * For a one-shot "submit and wait" call site, use `generateAsync()`
      * — that wraps the same underlying endpoint with a built-in poll.
+     *
+     * Telemetry note: only the SUBMIT step fires start/end on
+     * `client.events` — the per-call latency reflects the gateway
+     * accepting the job, NOT how long the upstream takes to render.
+     * Track render progress via your own poll loop's status responses.
      */
     async submitGenerate(model, params, init) {
-        return this.transport.postJSON("/v1/async/images/generations", { model, ...params }, init);
+        return wrapEvents(this.events, { model, capability: "image_generation" }, () => this.transport.postJSON("/v1/async/images/generations", { model, ...params }, init));
     }
     /**
      * Single poll of an in-flight async image job. Returns the same
@@ -52,7 +60,7 @@ export class ImageService {
      */
     async edit(model, params, init) {
         const form = buildEditForm(model, params);
-        return this.transport.postMultipart("/v1/images/edits", form, init);
+        return wrapEvents(this.events, { model, capability: "image_edit" }, () => this.transport.postMultipart("/v1/images/edits", form, init), (r) => ({ costUSD: r.usage?.total_cost }));
     }
 }
 function buildEditForm(model, params) {

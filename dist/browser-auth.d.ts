@@ -1,3 +1,4 @@
+import type { SDKEvents } from "./events.js";
 export interface BrowserAuthOptions {
     /**
      * Origin where the runjobs gateway lives — also the page that issues
@@ -33,6 +34,18 @@ export interface BrowserAuthOptions {
      * project from the registered (origin, app) pair.
      */
     project?: string;
+    /**
+     * Optional event bus from the parent RunJobs client.  When wired,
+     * the identity badge subscribes to call telemetry events and
+     * renders a real-time activity ring + LED dot + click-through
+     * popover with active / recent / session stats — turning the
+     * static "signed in" badge into a desktop-ball-style live
+     * indicator (similar to a tray-app gauge).
+     *
+     * Optional and back-compat: when omitted (or when `hideBadge` is
+     * true), the badge falls back to its original static behaviour.
+     */
+    events?: SDKEvents;
 }
 export interface BrowserUser {
     id?: string;
@@ -54,6 +67,10 @@ export declare class BrowserAuth {
     private readonly origin;
     private readonly hideBadge;
     private readonly project;
+    private readonly events;
+    /** Lazily-constructed when events are present — drives the badge's
+     *  activity ring / LED / popover. nullable for tests / non-browser. */
+    private readonly tracker;
     private token;
     private expiresAt;
     private userInfo;

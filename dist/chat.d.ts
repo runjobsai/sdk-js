@@ -1,5 +1,6 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
 /**
  * A single message in a chat conversation. Content is a string for plain
  * text, or an array of `ContentPart` for multi-modal messages.
@@ -121,9 +122,24 @@ export declare const toolResultMessage: (toolCallId: string, content: string) =>
 export declare const userMessageParts: (...parts: ContentPart[]) => ChatMessage;
 export declare const textPart: (text: string) => ContentPart;
 export declare const imagePart: (url: string, detail?: "auto" | "low" | "high") => ContentPart;
+/**
+ * Video content part. Only supported by chat models whose
+ * input_modalities includes `"video"` (currently Gemini 3.x). Other
+ * models 400 at the gateway. URL may be http(s) or a
+ * `data:video/mp4;base64,...` inline upload.
+ */
+export declare const videoPart: (url: string) => ContentPart;
+/**
+ * Audio content part. Only supported by chat models whose
+ * input_modalities includes `"audio"` (currently Gemini 3.x). Other
+ * models 400 at the gateway. URL may be http(s) or a
+ * `data:audio/wav;base64,...` inline upload.
+ */
+export declare const audioPart: (url: string) => ContentPart;
 export declare class ChatService {
     private readonly transport;
-    constructor(transport: Transport);
+    private readonly events;
+    constructor(transport: Transport, events: SDKEvents);
     /**
      * Create a chat completion (non-streaming).
      *
@@ -144,6 +160,9 @@ export declare class ChatService {
      *   if (chunk.usage) cost = chunk.usage.total_cost;
      * }
      * ```
+     *
+     * Also fires `request:streamDelta` on `client.events` for each chunk
+     * that carried text — drives the badge's tokens/sec rate display.
      */
     stream(params: ChatCompletionParams, init?: {
         signal?: AbortSignal;

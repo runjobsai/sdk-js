@@ -1,5 +1,6 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
 export interface SpeechParams {
     input: string;
     /** Named voice id (`alloy`, `nova`, …; provider-dependent). Omit
@@ -71,7 +72,8 @@ export interface TranscribeResponse {
 }
 export declare class AudioService {
     private readonly transport;
-    constructor(transport: Transport);
+    private readonly events;
+    constructor(transport: Transport, events: SDKEvents);
     /**
      * Generate speech from text. Output bytes are base64-decoded by the SDK
      * — `response.data` is a `Uint8Array` you can write directly to disk:

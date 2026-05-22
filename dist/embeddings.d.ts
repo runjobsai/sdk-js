@@ -1,5 +1,6 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
 export interface EmbeddingsParams {
     /** Single string OR array of strings — gateway forwards either
      *  shape verbatim. Passing a string returns `data: [{...}]` (1
@@ -40,7 +41,8 @@ export interface EmbeddingsResponse {
 }
 export declare class EmbeddingsService {
     private readonly transport;
-    constructor(transport: Transport);
+    private readonly events;
+    constructor(transport: Transport, events: SDKEvents);
     /**
      * Create one or more embeddings.
      *

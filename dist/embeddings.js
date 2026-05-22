@@ -1,7 +1,10 @@
+import { wrapEvents } from "./event-wrap.js";
 export class EmbeddingsService {
     transport;
-    constructor(transport) {
+    events;
+    constructor(transport, events) {
         this.transport = transport;
+        this.events = events;
     }
     /**
      * Create one or more embeddings.
@@ -18,7 +21,10 @@ export class EmbeddingsService {
      * ```
      */
     async create(model, params, init) {
-        return this.transport.postJSON("/v1/embeddings", { model, ...params }, init);
+        return wrapEvents(this.events, { model, capability: "embedding" }, () => this.transport.postJSON("/v1/embeddings", { model, ...params }, init), (r) => ({
+            totalTokens: r.usage?.total_tokens,
+            costUSD: r.usage?.total_cost,
+        }));
     }
 }
 //# sourceMappingURL=embeddings.js.map

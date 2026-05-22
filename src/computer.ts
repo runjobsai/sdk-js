@@ -1,5 +1,7 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
+import { wrapEvents } from "./event-wrap.js";
 
 /** Single-step computer-use request — a screenshot + history → next action(s). */
 export interface ComputerStepParams {
@@ -45,7 +47,10 @@ export interface ComputerResponse {
 }
 
 export class ComputerService {
-  constructor(private readonly transport: Transport) {}
+  constructor(
+    private readonly transport: Transport,
+    private readonly events: SDKEvents,
+  ) {}
 
   /**
    * Execute one step of a computer-use agent loop. Given a screenshot
@@ -57,10 +62,19 @@ export class ComputerService {
     params: ComputerStepParams,
     init?: { signal?: AbortSignal },
   ): Promise<ComputerResponse> {
-    return this.transport.postJSON<ComputerResponse>(
-      "/v1/computer/step",
-      { model, ...params },
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "computer_use" },
+      () =>
+        this.transport.postJSON<ComputerResponse>(
+          "/v1/computer/step",
+          { model, ...params },
+          init,
+        ),
+      (r) => ({
+        totalTokens: r.usage?.completion_tokens,
+        costUSD: r.usage?.total_cost,
+      }),
     );
   }
 }

@@ -1,5 +1,6 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
 export interface ImageGenerateParams {
     prompt: string;
     size?: string;
@@ -92,7 +93,8 @@ export interface ImageEditParams {
 }
 export declare class ImageService {
     private readonly transport;
-    constructor(transport: Transport);
+    private readonly events;
+    constructor(transport: Transport, events: SDKEvents);
     /**
      * Generate images from a text prompt via the synchronous endpoint.
      * For long-running requests (large Seedream batches, slow upstreams)
@@ -122,6 +124,11 @@ export declare class ImageService {
      *
      * For a one-shot "submit and wait" call site, use `generateAsync()`
      * — that wraps the same underlying endpoint with a built-in poll.
+     *
+     * Telemetry note: only the SUBMIT step fires start/end on
+     * `client.events` — the per-call latency reflects the gateway
+     * accepting the job, NOT how long the upstream takes to render.
+     * Track render progress via your own poll loop's status responses.
      */
     submitGenerate(model: string, params: ImageGenerateParams, init?: {
         signal?: AbortSignal;

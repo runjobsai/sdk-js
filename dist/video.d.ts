@@ -1,5 +1,6 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
 /**
  * Video generation params. Most fields map 1:1 to the gateway's
  * `/v1/videos/generations` body. Optional booleans (`generate_audio`,
@@ -100,8 +101,16 @@ export interface WaitOptions {
 }
 export declare class VideoService {
     private readonly transport;
-    constructor(transport: Transport);
-    /** Submit a video generation task. */
+    private readonly events;
+    constructor(transport: Transport, events: SDKEvents);
+    /** Submit a video generation task.
+     *
+     * Telemetry note: only the submit step fires start/end on
+     * `client.events` — the per-call latency reflects the gateway
+     * accepting the job, NOT how long upstream takes to render. The
+     * caller's poll loop sees status flips but the SDK doesn't emit
+     * end events for those (would otherwise leave the badge "active"
+     * for as long as the upstream renders, sometimes minutes). */
     generate(model: string, params: VideoGenerateParams, init?: {
         signal?: AbortSignal;
     }): Promise<VideoTask>;

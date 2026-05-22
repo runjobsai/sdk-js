@@ -1,11 +1,14 @@
+import { wrapEvents } from "./event-wrap.js";
 import { decodeMediaUrl } from "./media.js";
 /* ------------------------------------------------------------------ */
 /* Service                                                             */
 /* ------------------------------------------------------------------ */
 export class AudioService {
     transport;
-    constructor(transport) {
+    events;
+    constructor(transport, events) {
         this.transport = transport;
+        this.events = events;
     }
     // (Removed: listVoices — fetch voice metadata via client.models.get /
     //  client.models.list and read model.options.voices /
@@ -22,18 +25,12 @@ export class AudioService {
      * ```
      */
     async speech(model, params, init) {
-        // Wire shape: {audio_url: "data:<mime>;base64,...", usage: ...}.
-        // The data: URI carries both the mime label and the base64 payload;
-        // decodeMediaUrl handles both data: URIs and (for forward compat,
-        // should the gateway ever switch to a hosted blob URL) http(s)
-        // URLs symmetrically.
-        const raw = await this.transport.postJSON("/v1/audio/speech", buildSpeechBody(model, params), init);
-        const { bytes, contentType } = await decodeMediaUrl(raw.audio_url);
-        return {
-            data: bytes,
-            contentType,
-            usage: raw.usage,
-        };
+        return wrapEvents(this.events, { model, capability: "text_to_speech" }, async () => {
+            // Wire shape: {audio_url: "data:<mime>;base64,...", usage: ...}.
+            const raw = await this.transport.postJSON("/v1/audio/speech", buildSpeechBody(model, params), init);
+            const { bytes, contentType } = await decodeMediaUrl(raw.audio_url);
+            return { data: bytes, contentType, usage: raw.usage };
+        }, (r) => ({ costUSD: r.usage?.total_cost }));
     }
     /**
      * Async equivalent of `speech()`. Submits the job to the gateway's
@@ -51,16 +48,18 @@ export class AudioService {
      * an internal 10-minute cap applies.
      */
     async speechAsync(model, params, init) {
-        const submit = await this.transport.postJSON("/v1/async/audio/speech", buildSpeechBody(model, params), init);
-        if (!submit.id) {
-            throw new Error("runjobs: speech submit response missing job id");
-        }
-        return waitSpeechJob(this.transport, submit.id, init);
+        return wrapEvents(this.events, { model, capability: "text_to_speech" }, async () => {
+            const submit = await this.transport.postJSON("/v1/async/audio/speech", buildSpeechBody(model, params), init);
+            if (!submit.id) {
+                throw new Error("runjobs: speech submit response missing job id");
+            }
+            return waitSpeechJob(this.transport, submit.id, init);
+        }, (r) => ({ costUSD: r.usage?.total_cost }));
     }
     /** Transcribe audio to text via multipart upload. */
     async transcribe(model, params, init) {
         const form = buildTranscribeForm(model, params);
-        return this.transport.postMultipart("/v1/audio/transcriptions", form, init);
+        return wrapEvents(this.events, { model, capability: "speech_to_text" }, () => this.transport.postMultipart("/v1/audio/transcriptions", form, init), (r) => ({ costUSD: r.usage?.total_cost }));
     }
     /**
      * Async equivalent of `transcribe()`. Submits the upload, polls
@@ -73,12 +72,14 @@ export class AudioService {
      * an internal 10-minute cap applies.
      */
     async transcribeAsync(model, params, init) {
-        const form = buildTranscribeForm(model, params);
-        const submit = await this.transport.postMultipart("/v1/async/audio/transcriptions", form, init);
-        if (!submit.id) {
-            throw new Error("runjobs: transcribe submit response missing job id");
-        }
-        return waitTranscribeJob(this.transport, submit.id, init);
+        return wrapEvents(this.events, { model, capability: "speech_to_text" }, async () => {
+            const form = buildTranscribeForm(model, params);
+            const submit = await this.transport.postMultipart("/v1/async/audio/transcriptions", form, init);
+            if (!submit.id) {
+                throw new Error("runjobs: transcribe submit response missing job id");
+            }
+            return waitTranscribeJob(this.transport, submit.id, init);
+        }, (r) => ({ costUSD: r.usage?.total_cost }));
     }
 }
 /* ------------------------------------------------------------------ */

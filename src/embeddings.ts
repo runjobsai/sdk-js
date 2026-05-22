@@ -1,5 +1,7 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
+import { wrapEvents } from "./event-wrap.js";
 
 /* ------------------------------------------------------------------ */
 /* Embeddings — POST /v1/embeddings                                    */
@@ -53,7 +55,10 @@ export interface EmbeddingsResponse {
 }
 
 export class EmbeddingsService {
-  constructor(private readonly transport: Transport) {}
+  constructor(
+    private readonly transport: Transport,
+    private readonly events: SDKEvents,
+  ) {}
 
   /**
    * Create one or more embeddings.
@@ -74,10 +79,19 @@ export class EmbeddingsService {
     params: EmbeddingsParams,
     init?: { signal?: AbortSignal },
   ): Promise<EmbeddingsResponse> {
-    return this.transport.postJSON<EmbeddingsResponse>(
-      "/v1/embeddings",
-      { model, ...params },
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "embedding" },
+      () =>
+        this.transport.postJSON<EmbeddingsResponse>(
+          "/v1/embeddings",
+          { model, ...params },
+          init,
+        ),
+      (r) => ({
+        totalTokens: r.usage?.total_tokens,
+        costUSD: r.usage?.total_cost,
+      }),
     );
   }
 }

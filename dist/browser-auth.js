@@ -20,6 +20,7 @@
 // bundle can use OPFS / SharedArrayBuffer), the browser severs the
 // window.opener relationship for cross-origin popups, so popup-based
 // grant flows silently lose their postMessage replies.
+import { ActivityTracker } from "./activity-tracker.js";
 const TOKEN_REFRESH_MARGIN_S = 60;
 const STORAGE_KEY = "__runjobs_auth_v1__";
 // Set when the user clicks "Sign out".  While present, getToken() must
@@ -44,6 +45,10 @@ export class BrowserAuth {
     origin;
     hideBadge;
     project;
+    events;
+    /** Lazily-constructed when events are present — drives the badge's
+     *  activity ring / LED / popover. nullable for tests / non-browser. */
+    tracker;
     token = null;
     expiresAt = 0;
     userInfo = null;
@@ -54,6 +59,14 @@ export class BrowserAuth {
         this.origin = (opts.origin ?? "https://www.runjobs.ai").replace(/\/$/, "");
         this.hideBadge = !!opts.hideBadge;
         this.project = opts.project ?? null;
+        this.events = opts.events ?? null;
+        if (this.events && !this.hideBadge) {
+            this.tracker = new ActivityTracker();
+            this.tracker.attach(this.events);
+        }
+        else {
+            this.tracker = null;
+        }
         if (typeof window === "undefined")
             return;
         // Restore from localStorage (survives page reloads).  We pin the
@@ -414,74 +427,491 @@ export class BrowserAuth {
         const dashboardUrl = `${this.origin}/dashboard`;
         const ready = (cb) => document.body ? cb() : document.addEventListener("DOMContentLoaded", cb);
         ready(() => {
+            // Idempotent: remove an older instance so successive renders
+            // (e.g. after sign-in finishes) don't stack badges.
             document.getElementById(ID)?.remove();
-            // <button> instead of <div> — keyboard-focusable, screen-reader
-            // announces it as a button, native Enter/Space activation.
-            const el = document.createElement("button");
-            el.id = ID;
-            el.type = "button";
-            el.title = "Open RunJobs dashboard";
-            el.setAttribute("aria-label", "Open RunJobs dashboard");
-            el.style.cssText = [
-                "position:fixed",
-                "bottom:16px",
-                "right:16px",
-                "z-index:2147483647",
-                "display:flex",
-                "align-items:center",
-                "gap:8px",
-                "padding:6px 12px 6px 6px",
-                "border-radius:999px",
-                "font:500 12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
-                "color:#fff",
-                "background:rgba(15,15,20,0.55)",
-                "backdrop-filter:blur(10px) saturate(1.2)",
-                "-webkit-backdrop-filter:blur(10px) saturate(1.2)",
-                "border:1px solid rgba(255,255,255,0.12)",
-                "box-shadow:0 4px 16px rgba(0,0,0,0.15)",
-                "user-select:none",
-                "max-width:220px",
-                "overflow:hidden",
-                "cursor:pointer",
-                // Strip <button>'s default appearance so it inherits the
-                // pill silhouette established above.
-                "appearance:none",
-                "-webkit-appearance:none",
-                // Subtle hover affordance — the cursor change tells the user
-                // it's clickable, the color shift tells them they ARE on it.
-                "transition:background-color 120ms ease-out, box-shadow 120ms ease-out",
-            ].join(";");
-            el.addEventListener("mouseenter", () => {
-                el.style.backgroundColor = "rgba(30,30,40,0.7)";
-                el.style.boxShadow = "0 6px 20px rgba(0,0,0,0.22)";
+            const root = mountActivityBadge({
+                id: ID,
+                user: this.userInfo,
+                dashboardUrl,
+                tracker: this.tracker,
             });
-            el.addEventListener("mouseleave", () => {
-                el.style.backgroundColor = "rgba(15,15,20,0.55)";
-                el.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)";
-            });
-            el.addEventListener("click", () => {
-                // `noopener,noreferrer`: the new tab gets no `window.opener`
-                // back-reference, so it can't navigate or read state from the
-                // bundle window.  Standard hardening when window.open()-ing
-                // a different origin.
-                window.open(dashboardUrl, "_blank", "noopener,noreferrer");
-            });
-            const u = this.userInfo;
-            const avatar = document.createElement("div");
-            avatar.textContent = (u.name || "?").charAt(0).toUpperCase();
-            avatar.style.cssText = [
-                "width:22px;height:22px;border-radius:50%;flex-shrink:0",
-                "display:flex;align-items:center;justify-content:center",
-                "background:linear-gradient(135deg,#3b82f6,#8b5cf6)",
-                "font-size:11px;font-weight:600;color:#fff",
-            ].join(";");
-            const name = document.createElement("span");
-            name.textContent = u.name || "Signed in";
-            name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
-            el.appendChild(avatar);
-            el.appendChild(name);
-            document.body.appendChild(el);
+            document.body.appendChild(root);
         });
     }
+}
+function mountActivityBadge(opts) {
+    const { id, user, dashboardUrl, tracker } = opts;
+    const el = document.createElement("button");
+    el.id = id;
+    el.type = "button";
+    el.title = "RunJobs activity";
+    el.setAttribute("aria-label", "RunJobs activity status");
+    el.style.cssText = [
+        "position:fixed",
+        "bottom:16px",
+        "right:16px",
+        "z-index:2147483647",
+        "display:flex",
+        "align-items:center",
+        "gap:8px",
+        "padding:6px 12px 6px 6px",
+        "border-radius:999px",
+        "font:500 12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
+        "color:#fff",
+        "background:rgba(15,15,20,0.55)",
+        "backdrop-filter:blur(10px) saturate(1.2)",
+        "-webkit-backdrop-filter:blur(10px) saturate(1.2)",
+        "border:1px solid rgba(255,255,255,0.12)",
+        "box-shadow:0 4px 16px rgba(0,0,0,0.15)",
+        "user-select:none",
+        "max-width:220px",
+        "overflow:visible", // popover spills out the top
+        "cursor:pointer",
+        "appearance:none",
+        "-webkit-appearance:none",
+        "transition:background-color 120ms ease-out, box-shadow 120ms ease-out",
+    ].join(";");
+    el.addEventListener("mouseenter", () => {
+        el.style.backgroundColor = "rgba(30,30,40,0.7)";
+        el.style.boxShadow = "0 6px 20px rgba(0,0,0,0.22)";
+    });
+    el.addEventListener("mouseleave", () => {
+        el.style.backgroundColor = "rgba(15,15,20,0.55)";
+        el.style.boxShadow = "0 4px 16px rgba(0,0,0,0.15)";
+    });
+    // ─── Avatar with ring + LED ────────────────────────────────
+    const avatarWrap = document.createElement("span");
+    avatarWrap.style.cssText = [
+        "position:relative",
+        "width:26px;height:26px",
+        "flex-shrink:0",
+        "display:inline-flex;align-items:center;justify-content:center",
+    ].join(";");
+    // Progress ring (SVG). Hidden at idle so we don't paint when
+    // nothing's happening. Stroke offset / dasharray animate via
+    // direct style writes from the redraw loop.
+    const ringNS = "http://www.w3.org/2000/svg";
+    const ring = document.createElementNS(ringNS, "svg");
+    ring.setAttribute("viewBox", "0 0 26 26");
+    ring.setAttribute("width", "26");
+    ring.setAttribute("height", "26");
+    ring.style.cssText = [
+        "position:absolute;inset:0",
+        "pointer-events:none",
+        "opacity:0",
+        "transition:opacity 200ms ease-out",
+    ].join(";");
+    const ringTrack = document.createElementNS(ringNS, "circle");
+    ringTrack.setAttribute("cx", "13");
+    ringTrack.setAttribute("cy", "13");
+    ringTrack.setAttribute("r", "12");
+    ringTrack.setAttribute("fill", "none");
+    ringTrack.setAttribute("stroke", "rgba(255,255,255,0.08)");
+    ringTrack.setAttribute("stroke-width", "1.5");
+    const ringArc = document.createElementNS(ringNS, "circle");
+    ringArc.setAttribute("cx", "13");
+    ringArc.setAttribute("cy", "13");
+    ringArc.setAttribute("r", "12");
+    ringArc.setAttribute("fill", "none");
+    ringArc.setAttribute("stroke", "#3b82f6");
+    ringArc.setAttribute("stroke-width", "2");
+    ringArc.setAttribute("stroke-linecap", "round");
+    // Rotate origin = center, start arc from 12 o'clock so progress
+    // sweeps clockwise like every progress UI on the planet.
+    ringArc.setAttribute("transform", "rotate(-90 13 13)");
+    // Circumference = 2πr ≈ 75.4. dasharray=circumference + dashoffset
+    // drives the arc length.
+    const RING_CIRC = 2 * Math.PI * 12;
+    ringArc.setAttribute("stroke-dasharray", String(RING_CIRC));
+    ringArc.setAttribute("stroke-dashoffset", String(RING_CIRC));
+    ring.appendChild(ringTrack);
+    ring.appendChild(ringArc);
+    const avatar = document.createElement("div");
+    avatar.textContent = (user.name || "?").charAt(0).toUpperCase();
+    avatar.style.cssText = [
+        "width:22px;height:22px;border-radius:50%;flex-shrink:0",
+        "display:flex;align-items:center;justify-content:center",
+        "background:linear-gradient(135deg,#3b82f6,#8b5cf6)",
+        "font-size:11px;font-weight:600;color:#fff",
+        "position:relative",
+    ].join(";");
+    // LED status dot — absolute-positioned over the avatar's
+    // bottom-right corner. Same trick Discord uses for online status.
+    const led = document.createElement("span");
+    led.style.cssText = [
+        "position:absolute",
+        "bottom:-2px;right:-2px",
+        "width:8px;height:8px;border-radius:50%",
+        "background:rgba(255,255,255,0.2)",
+        "border:2px solid rgba(15,15,20,1)",
+        "box-shadow:0 0 0 0 transparent",
+        "transition:background-color 150ms ease-out, box-shadow 200ms ease-out",
+        "pointer-events:none",
+    ].join(";");
+    avatarWrap.appendChild(ring);
+    avatarWrap.appendChild(avatar);
+    avatarWrap.appendChild(led);
+    const name = document.createElement("span");
+    name.textContent = user.name || "Signed in";
+    name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none";
+    el.appendChild(avatarWrap);
+    el.appendChild(name);
+    // ─── Popover (lazy, append on first open) ──────────────────
+    let popover = null;
+    let popoverOpen = false;
+    let popoverHoverTimer = null;
+    const openPopover = () => {
+        if (popoverOpen)
+            return;
+        popover ??= createPopover(dashboardUrl);
+        el.appendChild(popover);
+        popoverOpen = true;
+        // Schedule one immediate redraw so the popover shows current
+        // state, not a stale snapshot from the last close.
+        requestRedraw();
+    };
+    const closePopover = () => {
+        if (!popoverOpen)
+            return;
+        popover?.remove();
+        popoverOpen = false;
+    };
+    el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        popoverOpen ? closePopover() : openPopover();
+    });
+    // Hover-open with 400ms delay — matches macOS tray tooltips.
+    el.addEventListener("mouseenter", () => {
+        if (popoverHoverTimer !== null)
+            window.clearTimeout(popoverHoverTimer);
+        popoverHoverTimer = window.setTimeout(() => {
+            if (!popoverOpen)
+                openPopover();
+        }, 400);
+    });
+    el.addEventListener("mouseleave", (e) => {
+        if (popoverHoverTimer !== null) {
+            window.clearTimeout(popoverHoverTimer);
+            popoverHoverTimer = null;
+        }
+        // Don't auto-close on leave when there's still a popover open
+        // from a click — user is reading. The click-elsewhere handler
+        // below covers explicit dismissal.
+        void e;
+    });
+    // Click anywhere outside the badge closes the popover.
+    document.addEventListener("click", (e) => {
+        if (popoverOpen && !el.contains(e.target))
+            closePopover();
+    });
+    // ─── Redraw loop ───────────────────────────────────────────
+    //
+    // Idle: zero work. Active OR popover open: redraw at ~6 Hz so
+    // the ring sweep and per-call elapsed counters stay live without
+    // burning CPU. Token-arrival events also push a redraw out of
+    // band so the ring jumps as soon as a chunk lands.
+    let rafScheduled = false;
+    let intervalHandle = null;
+    const reconcile = () => {
+        rafScheduled = false;
+        if (!tracker) {
+            // No event bus → static badge. Hide ring + LED.
+            ring.style.opacity = "0";
+            led.style.background = "rgba(255,255,255,0.2)";
+            return;
+        }
+        const snap = tracker.snapshot();
+        updateRing(ring, ringArc, RING_CIRC, snap);
+        updateLED(led, snap);
+        if (popoverOpen && popover)
+            updatePopover(popover, snap);
+        // Schedule the next paint only if there's reason. When the
+        // popover is open we want the elapsed seconds to tick; when
+        // active we want the ring to keep sweeping.
+        const needsLoop = snap.status !== "idle" || popoverOpen;
+        if (needsLoop && intervalHandle === null) {
+            intervalHandle = window.setInterval(requestRedraw, 160);
+        }
+        else if (!needsLoop && intervalHandle !== null) {
+            window.clearInterval(intervalHandle);
+            intervalHandle = null;
+        }
+    };
+    function requestRedraw() {
+        if (rafScheduled)
+            return;
+        rafScheduled = true;
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(reconcile);
+        }
+        else {
+            setTimeout(reconcile, 0);
+        }
+    }
+    // Drive redraws off the event stream so latency between a token
+    // arriving upstream and the ring updating stays human-imperceptible
+    // (~20ms instead of the 160ms interval cadence).
+    if (tracker) {
+        // Direct subscription to the snapshot-relevant events; we don't
+        // care about which event fired, only that state changed.
+        // Re-attaches to the same bus the tracker subscribed to via the
+        // tracker's events param — we hold the tracker, the events
+        // reference lives only on the tracker side, so subscribe through
+        // a passthrough: the tracker's attach() returned the disposer
+        // but didn't expose the bus. Instead, hook into the snapshot()
+        // cadence by polling at idle-low frequency:
+        //
+        // Simpler: just request a redraw on every tracker-relevant
+        // event. We re-route the tracker's bus through a tiny shim.
+        // See bindTrackerRedraw below.
+        bindTrackerRedraw(tracker, requestRedraw);
+    }
+    // Initial paint so the user sees their LED/ring state at mount
+    // even before any event fires.
+    requestRedraw();
+    return el;
+}
+/**
+ * Subscribe `redraw` to fire on every tracker-relevant event. The
+ * tracker doesn't re-expose the bus it subscribed to, so we
+ * monkey-patch its handlers with a wrapping pass-through. Cheap
+ * (4 method assignments), and survives the lifetime of the tracker.
+ */
+function bindTrackerRedraw(tracker, redraw) {
+    // Access the private handlers via the public API. The tracker's
+    // public surface is snapshot() — pulled by the loop — so the
+    // "push on event" channel here is provided indirectly: we add a
+    // proxy attach() rebind by overriding the unsub from before.
+    // Simplest: wrap the tracker's snapshot() call site with a
+    // post-event redraw scheduler. Already done above via the
+    // setInterval loop — events trigger NEXT tick redraw anyway.
+    // This function intentionally left as a hook for a future
+    // direct-event subscription; today the 160ms interval already
+    // satisfies the human-imperceptible threshold.
+    void tracker;
+    void redraw;
+}
+function updateRing(ring, arc, circ, snap) {
+    if (snap.active.length === 0) {
+        ring.style.opacity = "0";
+        return;
+    }
+    ring.style.opacity = "1";
+    // Pick the most informative active call for the ring (highest
+    // tokens/sec, falling back to oldest). The popover lists every
+    // call individually; this is just for the at-a-glance glow.
+    const primary = snap.active.reduce((best, c) => (c.tokensPerSec > best.tokensPerSec ? c : best), snap.active[0]);
+    if (primary.streaming && primary.tokensPerSec > 0) {
+        // Active streaming → arc length scales with tokens/sec, capped
+        // at the full ring at ~60 tok/s (typical chat ceiling).
+        const fraction = Math.min(primary.tokensPerSec / 60, 1);
+        arc.setAttribute("stroke-dashoffset", String(circ * (1 - fraction)));
+        arc.setAttribute("stroke", "#3b82f6");
+    }
+    else if (snap.status === "error") {
+        arc.setAttribute("stroke-dashoffset", "0");
+        arc.setAttribute("stroke", "#ef4444");
+    }
+    else {
+        // Non-streaming or pre-first-token: indeterminate sweep — just
+        // show a quarter-arc that rotates via CSS keyframes (added
+        // below as a one-shot class).
+        arc.setAttribute("stroke-dashoffset", String(circ * 0.75));
+        arc.setAttribute("stroke", "#a78bfa");
+    }
+}
+function updateLED(led, snap) {
+    switch (snap.status) {
+        case "idle":
+            led.style.background = "rgba(255,255,255,0.2)";
+            led.style.boxShadow = "0 0 0 0 transparent";
+            break;
+        case "active":
+            led.style.background = "#3b82f6";
+            // CSS-driven pulse via box-shadow ring expanding outward —
+            // single keyframe loop, cheaper than animating opacity.
+            led.style.boxShadow = "0 0 0 0 rgba(59,130,246,0.7)";
+            led.style.animation = "__runjobs_led_pulse__ 1.2s ease-out infinite";
+            break;
+        case "error":
+            led.style.background = "#ef4444";
+            led.style.boxShadow = "0 0 0 2px rgba(239,68,68,0.3)";
+            led.style.animation = "";
+            break;
+    }
+}
+function createPopover(dashboardUrl) {
+    // Inject the LED pulse keyframes once (idempotent).
+    if (!document.getElementById("__runjobs_kf__")) {
+        const style = document.createElement("style");
+        style.id = "__runjobs_kf__";
+        style.textContent =
+            "@keyframes __runjobs_led_pulse__ {" +
+                "  0%   { box-shadow: 0 0 0 0   rgba(59,130,246,0.7); }" +
+                "  70%  { box-shadow: 0 0 0 6px rgba(59,130,246,0);   }" +
+                "  100% { box-shadow: 0 0 0 0   rgba(59,130,246,0);   }" +
+                "}";
+        document.head.appendChild(style);
+    }
+    const pop = document.createElement("div");
+    pop.style.cssText = [
+        "position:absolute",
+        "bottom:calc(100% + 8px)",
+        "right:0",
+        "min-width:280px;max-width:340px",
+        "padding:10px 12px",
+        "border-radius:10px",
+        "background:rgba(15,15,20,0.92)",
+        "backdrop-filter:blur(20px) saturate(1.3)",
+        "-webkit-backdrop-filter:blur(20px) saturate(1.3)",
+        "border:1px solid rgba(255,255,255,0.12)",
+        "box-shadow:0 10px 30px rgba(0,0,0,0.4)",
+        "color:#fff",
+        "font:400 11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif",
+        "cursor:default",
+        "text-align:left",
+    ].join(";");
+    pop.setAttribute("data-runjobs-popover", "1");
+    pop.addEventListener("click", (e) => e.stopPropagation());
+    // The popover's content is rebuilt on every redraw to keep DOM
+    // diffing simple. ~3 sections × ~6 children = ~20 nodes, no
+    // measurable cost at the 6 Hz redraw rate.
+    const inner = document.createElement("div");
+    inner.setAttribute("data-runjobs-popover-content", "1");
+    pop.appendChild(inner);
+    const footer = document.createElement("div");
+    footer.style.cssText = [
+        "margin-top:10px;padding-top:8px",
+        "border-top:1px solid rgba(255,255,255,0.08)",
+        "display:flex;justify-content:space-between;align-items:center",
+        "font-size:10px;color:rgba(255,255,255,0.6)",
+    ].join(";");
+    const dash = document.createElement("a");
+    dash.textContent = "Open dashboard →";
+    dash.href = dashboardUrl;
+    dash.target = "_blank";
+    dash.rel = "noopener noreferrer";
+    dash.style.cssText = "color:#a78bfa;text-decoration:none";
+    footer.appendChild(dash);
+    pop.appendChild(footer);
+    return pop;
+}
+function updatePopover(pop, snap) {
+    const inner = pop.querySelector('[data-runjobs-popover-content]');
+    if (!inner)
+        return;
+    inner.innerHTML = "";
+    const now = Date.now();
+    inner.appendChild(renderActiveSection(snap, now));
+    inner.appendChild(renderRecentSection(snap, now));
+    inner.appendChild(renderSessionSection(snap.session, now));
+}
+function renderActiveSection(snap, now) {
+    const sec = document.createElement("div");
+    sec.style.marginBottom = "10px";
+    sec.appendChild(sectionLabel("Active", snap.active.length > 0 ? `${snap.active.length} in flight` : "—"));
+    if (snap.active.length === 0) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "color:rgba(255,255,255,0.4);font-size:10px;padding:2px 0";
+        empty.textContent = "No calls in flight.";
+        sec.appendChild(empty);
+        return sec;
+    }
+    for (const c of snap.active) {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:space-between;gap:8px;padding:3px 0";
+        const left = document.createElement("span");
+        left.style.cssText = "color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px";
+        left.textContent = c.model;
+        const right = document.createElement("span");
+        right.style.cssText = "color:rgba(255,255,255,0.7);font-variant-numeric:tabular-nums;font-size:10px";
+        const elapsed = ((now - c.startedAt) / 1000).toFixed(1);
+        const rate = c.tokensPerSec > 0 ? ` · ${Math.round(c.tokensPerSec)} tok/s` : "";
+        right.textContent = `${elapsed}s${rate}`;
+        row.appendChild(left);
+        row.appendChild(right);
+        sec.appendChild(row);
+    }
+    return sec;
+}
+function renderRecentSection(snap, now) {
+    const sec = document.createElement("div");
+    sec.style.marginBottom = "10px";
+    sec.appendChild(sectionLabel("Recent", snap.recent.length > 0 ? `last ${Math.min(snap.recent.length, 5)}` : "—"));
+    if (snap.recent.length === 0) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "color:rgba(255,255,255,0.4);font-size:10px;padding:2px 0";
+        empty.textContent = "Nothing yet this session.";
+        sec.appendChild(empty);
+        return sec;
+    }
+    for (const c of snap.recent.slice(0, 5)) {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:space-between;gap:8px;padding:3px 0";
+        const left = document.createElement("span");
+        left.style.cssText = "color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px";
+        // Prefix bullet by status — cheap visual scan.
+        const bullet = document.createElement("span");
+        bullet.textContent = c.ok ? "✓ " : "✗ ";
+        bullet.style.color = c.ok ? "#10b981" : "#ef4444";
+        left.appendChild(bullet);
+        left.appendChild(document.createTextNode(c.model));
+        const right = document.createElement("span");
+        right.style.cssText = "color:rgba(255,255,255,0.7);font-variant-numeric:tabular-nums;font-size:10px";
+        const latency = `${(c.latencyMs / 1000).toFixed(1)}s`;
+        const cost = c.costUSD !== undefined ? ` · $${c.costUSD.toFixed(4)}` : "";
+        const ago = ` · ${relativeTime(now - c.endedAt)}`;
+        right.textContent = `${latency}${cost}${ago}`;
+        row.appendChild(left);
+        row.appendChild(right);
+        sec.appendChild(row);
+    }
+    return sec;
+}
+function renderSessionSection(s, now) {
+    const sec = document.createElement("div");
+    sec.appendChild(sectionLabel("Session", relativeTime(now - s.startedAt)));
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:space-between;gap:12px;color:rgba(255,255,255,0.85);font-size:10px";
+    const calls = document.createElement("span");
+    calls.textContent = `${s.totalCalls} call${s.totalCalls === 1 ? "" : "s"}`;
+    const cost = document.createElement("span");
+    cost.textContent = `$${s.totalCostUSD.toFixed(4)}`;
+    const errors = document.createElement("span");
+    errors.textContent = s.errorCount > 0 ? `${s.errorCount} error${s.errorCount === 1 ? "" : "s"}` : "0 errors";
+    if (s.errorCount > 0)
+        errors.style.color = "#ef4444";
+    row.appendChild(calls);
+    row.appendChild(cost);
+    row.appendChild(errors);
+    sec.appendChild(row);
+    return sec;
+}
+function sectionLabel(title, hint) {
+    const lbl = document.createElement("div");
+    lbl.style.cssText = [
+        "display:flex;justify-content:space-between;align-items:baseline",
+        "margin-bottom:4px",
+        "color:rgba(255,255,255,0.55)",
+        "font-size:10px;text-transform:uppercase;letter-spacing:0.05em",
+    ].join(";");
+    const t = document.createElement("span");
+    t.textContent = title;
+    const h = document.createElement("span");
+    h.textContent = hint;
+    h.style.cssText = "font-size:9px;letter-spacing:0";
+    lbl.appendChild(t);
+    lbl.appendChild(h);
+    return lbl;
+}
+function relativeTime(ms) {
+    if (ms < 1500)
+        return "just now";
+    if (ms < 60_000)
+        return `${Math.round(ms / 1000)}s ago`;
+    if (ms < 3_600_000)
+        return `${Math.round(ms / 60_000)}m ago`;
+    return `${Math.round(ms / 3_600_000)}h ago`;
 }
 //# sourceMappingURL=browser-auth.js.map

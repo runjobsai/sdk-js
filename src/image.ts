@@ -1,5 +1,7 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
+import { wrapEvents } from "./event-wrap.js";
 
 export interface ImageGenerateParams {
   prompt: string;
@@ -101,7 +103,10 @@ export interface ImageEditParams {
 /* ------------------------------------------------------------------ */
 
 export class ImageService {
-  constructor(private readonly transport: Transport) {}
+  constructor(
+    private readonly transport: Transport,
+    private readonly events: SDKEvents,
+  ) {}
 
   /**
    * Generate images from a text prompt via the synchronous endpoint.
@@ -113,10 +118,16 @@ export class ImageService {
     params: ImageGenerateParams,
     init?: { signal?: AbortSignal },
   ): Promise<ImageResponse> {
-    return this.transport.postJSON<ImageResponse>(
-      "/v1/images/generations",
-      { model, ...params },
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "image_generation" },
+      () =>
+        this.transport.postJSON<ImageResponse>(
+          "/v1/images/generations",
+          { model, ...params },
+          init,
+        ),
+      (r) => ({ costUSD: r.usage?.total_cost }),
     );
   }
 
@@ -133,10 +144,16 @@ export class ImageService {
     params: ImageGenerateParams,
     init?: { signal?: AbortSignal; pollIntervalMs?: number },
   ): Promise<ImageResponse> {
-    return this.transport.postJSON<ImageResponse>(
-      "/v1/images/generations/async",
-      { model, ...params, _poll_interval_ms: init?.pollIntervalMs },
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "image_generation" },
+      () =>
+        this.transport.postJSON<ImageResponse>(
+          "/v1/images/generations/async",
+          { model, ...params, _poll_interval_ms: init?.pollIntervalMs },
+          init,
+        ),
+      (r) => ({ costUSD: r.usage?.total_cost }),
     );
   }
 
@@ -149,16 +166,26 @@ export class ImageService {
    *
    * For a one-shot "submit and wait" call site, use `generateAsync()`
    * — that wraps the same underlying endpoint with a built-in poll.
+   *
+   * Telemetry note: only the SUBMIT step fires start/end on
+   * `client.events` — the per-call latency reflects the gateway
+   * accepting the job, NOT how long the upstream takes to render.
+   * Track render progress via your own poll loop's status responses.
    */
   async submitGenerate(
     model: string,
     params: ImageGenerateParams,
     init?: { signal?: AbortSignal },
   ): Promise<AsyncImageJob> {
-    return this.transport.postJSON<AsyncImageJob>(
-      "/v1/async/images/generations",
-      { model, ...params },
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "image_generation" },
+      () =>
+        this.transport.postJSON<AsyncImageJob>(
+          "/v1/async/images/generations",
+          { model, ...params },
+          init,
+        ),
     );
   }
 
@@ -189,10 +216,16 @@ export class ImageService {
     init?: { signal?: AbortSignal },
   ): Promise<ImageResponse> {
     const form = buildEditForm(model, params);
-    return this.transport.postMultipart<ImageResponse>(
-      "/v1/images/edits",
-      form,
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "image_edit" },
+      () =>
+        this.transport.postMultipart<ImageResponse>(
+          "/v1/images/edits",
+          form,
+          init,
+        ),
+      (r) => ({ costUSD: r.usage?.total_cost }),
     );
   }
 }

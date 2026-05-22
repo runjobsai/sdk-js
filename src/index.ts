@@ -7,6 +7,30 @@
  */
 
 export { RunJobs, RunJobs as Client, type ClientOptions, type AuthProvider } from "./client.js";
+
+// SDK telemetry — `client.events` fires these around every LLM-ish
+// service call so UI overlays (the badge being the canonical example)
+// can render real-time state. The ActivityTracker turns the raw
+// stream into the snapshot the badge reads each frame; exported
+// alongside the bus so power users can build their own status UI.
+export {
+  SDKEvents,
+  newRequestId,
+  type RequestStartEvent,
+  type RequestStreamDeltaEvent,
+  type RequestEndEvent,
+  type RequestErrorEvent,
+  type SDKEventMap,
+  type SDKCapability,
+  type Unsubscribe,
+} from "./events.js";
+export {
+  ActivityTracker,
+  type ActiveCall,
+  type CompletedCall,
+  type SessionStats,
+  type ActivitySnapshot,
+} from "./activity-tracker.js";
 export { BrowserAuth, type BrowserAuthOptions, type BrowserUser } from "./browser-auth.js";
 export { APIError } from "./errors.js";
 export type { Usage } from "./types.js";

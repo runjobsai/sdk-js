@@ -1,5 +1,7 @@
 import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
+import type { SDKEvents } from "./events.js";
+import { wrapEvents } from "./event-wrap.js";
 import { decodeMediaUrl } from "./media.js";
 
 /* ------------------------------------------------------------------ */
@@ -97,7 +99,10 @@ export interface TranscribeResponse {
 /* ------------------------------------------------------------------ */
 
 export class AudioService {
-  constructor(private readonly transport: Transport) {}
+  constructor(
+    private readonly transport: Transport,
+    private readonly events: SDKEvents,
+  ) {}
 
   // (Removed: listVoices — fetch voice metadata via client.models.get /
   //  client.models.list and read model.options.voices /
@@ -119,25 +124,24 @@ export class AudioService {
     params: SpeechParams,
     init?: { signal?: AbortSignal },
   ): Promise<SpeechResponse> {
-    // Wire shape: {audio_url: "data:<mime>;base64,...", usage: ...}.
-    // The data: URI carries both the mime label and the base64 payload;
-    // decodeMediaUrl handles both data: URIs and (for forward compat,
-    // should the gateway ever switch to a hosted blob URL) http(s)
-    // URLs symmetrically.
-    const raw = await this.transport.postJSON<{
-      audio_url: string;
-      usage: Usage;
-    }>(
-      "/v1/audio/speech",
-      buildSpeechBody(model, params),
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "text_to_speech" },
+      async () => {
+        // Wire shape: {audio_url: "data:<mime>;base64,...", usage: ...}.
+        const raw = await this.transport.postJSON<{
+          audio_url: string;
+          usage: Usage;
+        }>(
+          "/v1/audio/speech",
+          buildSpeechBody(model, params),
+          init,
+        );
+        const { bytes, contentType } = await decodeMediaUrl(raw.audio_url);
+        return { data: bytes, contentType, usage: raw.usage };
+      },
+      (r) => ({ costUSD: r.usage?.total_cost }),
     );
-    const { bytes, contentType } = await decodeMediaUrl(raw.audio_url);
-    return {
-      data: bytes,
-      contentType,
-      usage: raw.usage,
-    };
   }
 
   /**
@@ -160,15 +164,22 @@ export class AudioService {
     params: SpeechParams,
     init?: { signal?: AbortSignal; pollIntervalMs?: number },
   ): Promise<SpeechResponse> {
-    const submit = await this.transport.postJSON<{ id: string; status: string }>(
-      "/v1/async/audio/speech",
-      buildSpeechBody(model, params),
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "text_to_speech" },
+      async () => {
+        const submit = await this.transport.postJSON<{ id: string; status: string }>(
+          "/v1/async/audio/speech",
+          buildSpeechBody(model, params),
+          init,
+        );
+        if (!submit.id) {
+          throw new Error("runjobs: speech submit response missing job id");
+        }
+        return waitSpeechJob(this.transport, submit.id, init);
+      },
+      (r) => ({ costUSD: r.usage?.total_cost }),
     );
-    if (!submit.id) {
-      throw new Error("runjobs: speech submit response missing job id");
-    }
-    return waitSpeechJob(this.transport, submit.id, init);
   }
 
   /** Transcribe audio to text via multipart upload. */
@@ -178,10 +189,16 @@ export class AudioService {
     init?: { signal?: AbortSignal },
   ): Promise<TranscribeResponse> {
     const form = buildTranscribeForm(model, params);
-    return this.transport.postMultipart<TranscribeResponse>(
-      "/v1/audio/transcriptions",
-      form,
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "speech_to_text" },
+      () =>
+        this.transport.postMultipart<TranscribeResponse>(
+          "/v1/audio/transcriptions",
+          form,
+          init,
+        ),
+      (r) => ({ costUSD: r.usage?.total_cost }),
     );
   }
 
@@ -200,16 +217,23 @@ export class AudioService {
     params: TranscribeParams,
     init?: { signal?: AbortSignal; pollIntervalMs?: number },
   ): Promise<TranscribeResponse> {
-    const form = buildTranscribeForm(model, params);
-    const submit = await this.transport.postMultipart<{ id: string; status: string }>(
-      "/v1/async/audio/transcriptions",
-      form,
-      init,
+    return wrapEvents(
+      this.events,
+      { model, capability: "speech_to_text" },
+      async () => {
+        const form = buildTranscribeForm(model, params);
+        const submit = await this.transport.postMultipart<{ id: string; status: string }>(
+          "/v1/async/audio/transcriptions",
+          form,
+          init,
+        );
+        if (!submit.id) {
+          throw new Error("runjobs: transcribe submit response missing job id");
+        }
+        return waitTranscribeJob(this.transport, submit.id, init);
+      },
+      (r) => ({ costUSD: r.usage?.total_cost }),
     );
-    if (!submit.id) {
-      throw new Error("runjobs: transcribe submit response missing job id");
-    }
-    return waitTranscribeJob(this.transport, submit.id, init);
   }
 }
 
