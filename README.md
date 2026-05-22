@@ -49,7 +49,7 @@ Default base URL is `https://api.runjobs.ai`. Override with `new RunJobs({ apiKe
 | **Static** (default) | Server / CLI | `new RunJobs({ apiKey: "gw-…" })` or `apiKeyResolver: async () => "…"` |
 | **runjobs.ai browser auth** | Client-side bundles | `new RunJobs({ authProvider: "runjobs" })` |
 
-API key prefixes: `gw-…` (user-level), `rj_…` (workspace agent), `rrt_…` (project-bound resource token, required for `client.files.*`).
+API key prefixes: `gw-…` (user-level), `rj_…` (workspace agent), `rrt_…` (resource SDK token; project-bound when `project_id` resolves, otherwise unbound — files still work but live under the user's `_unbound/` namespace).
 
 ### Browser auth (`authProvider: "runjobs"`)
 
@@ -409,7 +409,7 @@ The `messages` shape is intentionally opaque — both Anthropic and OpenAI compu
 
 Backed by `/v1/files/*`. Files are stored under `(user, project)` on the gateway and addressed by POSIX-style paths. Every `FileObject.url` is a stable, **public** address — embed it in `<img>`, share it, persist it.
 
-Requires an `rrt_*` project-bound token. In browser-auth mode, set `project` on the client (see Authentication above).
+Works with any `rrt_*` token. When the token is bound to a project (`project_id` resolved at sign-in), files live under that project's namespace; otherwise they live under the user's `_unbound/` namespace and are still listed in the user's dashboard files page.
 
 ```ts
 // Upload — BodyInit (Blob, File, ArrayBuffer, Uint8Array, ReadableStream, string).
