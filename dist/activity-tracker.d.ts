@@ -80,12 +80,28 @@ export declare class ActivityTracker {
     /** Track most recent error wall-clock so the LED stays red for
      *  ERROR_HIGHLIGHT_MS even after the error scrolls out of recent. */
     private lastErrorAt;
+    /** "Snapshot changed" listeners. Fired AFTER every event handler
+     *  runs (start / delta / end / error), letting UIs re-render in
+     *  push-mode instead of polling. Without this hook, the badge's
+     *  ring/LED stayed idle until the user opened the popover —
+     *  events landed in the tracker but nobody told the DOM. */
+    private changeListeners;
     /**
      * Subscribe the tracker to a bus. Returns a single disposer that
      * unsubscribes all four handlers — callers (BrowserAuth in our
      * case) attach this on construction and dispose on teardown.
      */
     attach(events: SDKEvents): () => void;
+    /**
+     * Subscribe to "snapshot may have changed" notifications. Fires
+     * synchronously after each event handler runs — typical consumer
+     * is the badge's `requestRedraw()` which coalesces multiple
+     * notifications into one rAF paint.
+     *
+     * Returns a disposer; call to unsubscribe.
+     */
+    onChange(handler: () => void): () => void;
+    private notify;
     /** O(active+recent) — small in practice, fine on every frame. */
     snapshot(): ActivitySnapshot;
     private onStart;

@@ -110,6 +110,12 @@ export class ActivityTracker {
   /** Track most recent error wall-clock so the LED stays red for
    *  ERROR_HIGHLIGHT_MS even after the error scrolls out of recent. */
   private lastErrorAt = 0;
+  /** "Snapshot changed" listeners. Fired AFTER every event handler
+   *  runs (start / delta / end / error), letting UIs re-render in
+   *  push-mode instead of polling. Without this hook, the badge's
+   *  ring/LED stayed idle until the user opened the popover —
+   *  events landed in the tracker but nobody told the DOM. */
+  private changeListeners = new Set<() => void>();
 
   /**
    * Subscribe the tracker to a bus. Returns a single disposer that
@@ -118,14 +124,38 @@ export class ActivityTracker {
    */
   attach(events: SDKEvents): () => void {
     const offs = [
-      events.on("request:start", (e) => this.onStart(e)),
-      events.on("request:streamDelta", (e) => this.onDelta(e)),
-      events.on("request:end", (e) => this.onEnd(e)),
-      events.on("request:error", (e) => this.onError(e)),
+      events.on("request:start", (e) => { this.onStart(e); this.notify(); }),
+      events.on("request:streamDelta", (e) => { this.onDelta(e); this.notify(); }),
+      events.on("request:end", (e) => { this.onEnd(e); this.notify(); }),
+      events.on("request:error", (e) => { this.onError(e); this.notify(); }),
     ];
     return () => {
       for (const o of offs) o();
     };
+  }
+
+  /**
+   * Subscribe to "snapshot may have changed" notifications. Fires
+   * synchronously after each event handler runs — typical consumer
+   * is the badge's `requestRedraw()` which coalesces multiple
+   * notifications into one rAF paint.
+   *
+   * Returns a disposer; call to unsubscribe.
+   */
+  onChange(handler: () => void): () => void {
+    this.changeListeners.add(handler);
+    return () => this.changeListeners.delete(handler);
+  }
+
+  private notify(): void {
+    for (const h of this.changeListeners) {
+      try {
+        h();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[runjobs sdk] ActivityTracker onChange listener threw:", err);
+      }
+    }
   }
 
   /** O(active+recent) — small in practice, fine on every frame. */

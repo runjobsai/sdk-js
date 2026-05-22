@@ -697,48 +697,19 @@ function mountActivityBadge(opts) {
             setTimeout(reconcile, 0);
         }
     }
-    // Drive redraws off the event stream so latency between a token
-    // arriving upstream and the ring updating stays human-imperceptible
-    // (~20ms instead of the 160ms interval cadence).
+    // Drive redraws off the tracker's onChange — fires synchronously
+    // after every start / delta / end / error so the LED + ring update
+    // within an animation frame of the event, not when the user
+    // happens to hover the badge. requestRedraw() coalesces multiple
+    // notifications into one rAF paint, so a chunky stream (30+ deltas
+    // per second) still paints at most once per frame.
     if (tracker) {
-        // Direct subscription to the snapshot-relevant events; we don't
-        // care about which event fired, only that state changed.
-        // Re-attaches to the same bus the tracker subscribed to via the
-        // tracker's events param — we hold the tracker, the events
-        // reference lives only on the tracker side, so subscribe through
-        // a passthrough: the tracker's attach() returned the disposer
-        // but didn't expose the bus. Instead, hook into the snapshot()
-        // cadence by polling at idle-low frequency:
-        //
-        // Simpler: just request a redraw on every tracker-relevant
-        // event. We re-route the tracker's bus through a tiny shim.
-        // See bindTrackerRedraw below.
-        bindTrackerRedraw(tracker, requestRedraw);
+        tracker.onChange(requestRedraw);
     }
     // Initial paint so the user sees their LED/ring state at mount
     // even before any event fires.
     requestRedraw();
     return el;
-}
-/**
- * Subscribe `redraw` to fire on every tracker-relevant event. The
- * tracker doesn't re-expose the bus it subscribed to, so we
- * monkey-patch its handlers with a wrapping pass-through. Cheap
- * (4 method assignments), and survives the lifetime of the tracker.
- */
-function bindTrackerRedraw(tracker, redraw) {
-    // Access the private handlers via the public API. The tracker's
-    // public surface is snapshot() — pulled by the loop — so the
-    // "push on event" channel here is provided indirectly: we add a
-    // proxy attach() rebind by overriding the unsub from before.
-    // Simplest: wrap the tracker's snapshot() call site with a
-    // post-event redraw scheduler. Already done above via the
-    // setInterval loop — events trigger NEXT tick redraw anyway.
-    // This function intentionally left as a hook for a future
-    // direct-event subscription; today the 160ms interval already
-    // satisfies the human-imperceptible threshold.
-    void tracker;
-    void redraw;
 }
 function updateRing(ring, arc, circ, snap) {
     if (snap.active.length === 0) {

@@ -214,6 +214,38 @@ test("ActivityTracker — recent is bounded to RECENT_MAX (20)", () => {
   assert.equal(snap.recent[19].id, "r5");
 });
 
+test("ActivityTracker — onChange fires after every event handler", () => {
+  // Regression: without this push-channel, the badge UI stayed
+  // visually idle until the user happened to open the popover —
+  // events landed in the tracker but nobody told the DOM to repaint.
+  const bus = new SDKEvents();
+  const tr = new ActivityTracker();
+  tr.attach(bus);
+  let fires = 0;
+  const off = tr.onChange(() => fires++);
+
+  bus.emit("request:start", {
+    id: "r1", model: "m", capability: "text",
+    startedAt: Date.now(), streaming: true,
+  });
+  assert.equal(fires, 1, "start fires onChange");
+
+  bus.emit("request:streamDelta", { id: "r1", deltaTokens: 5, totalTokens: 5 });
+  assert.equal(fires, 2, "delta fires onChange");
+
+  bus.emit("request:end", {
+    id: "r1", model: "m", capability: "text", latencyMs: 1, totalTokens: 5,
+  });
+  assert.equal(fires, 3, "end fires onChange");
+
+  off();
+  bus.emit("request:start", {
+    id: "r2", model: "m", capability: "text",
+    startedAt: Date.now(), streaming: false,
+  });
+  assert.equal(fires, 3, "disposer stops the listener");
+});
+
 test("ActivityTracker — late streamDelta after end is silently dropped", () => {
   const bus = new SDKEvents();
   const tr = new ActivityTracker();
