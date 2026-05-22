@@ -558,47 +558,95 @@ function mountActivityBadge(opts) {
     el.appendChild(avatarWrap);
     el.appendChild(name);
     // ─── Popover (lazy, append on first open) ──────────────────
+    //
+    // Open / close has two modes:
+    //   - hover: 400ms-grace open on badge enter; 300ms-grace close
+    //     when neither badge NOR popover is hovered. The grace lets
+    //     the user cross the 8px gap between badge and popover without
+    //     losing the popover. Standard tooltip pattern.
+    //   - click: sticky — stays open until the user clicks outside.
+    //     Useful for reading + copying values out of the panel.
     let popover = null;
     let popoverOpen = false;
-    let popoverHoverTimer = null;
-    const openPopover = () => {
-        if (popoverOpen)
+    let popoverOpenedBy = null;
+    let openTimer = null;
+    let closeTimer = null;
+    const cancelOpen = () => {
+        if (openTimer !== null) {
+            window.clearTimeout(openTimer);
+            openTimer = null;
+        }
+    };
+    const cancelClose = () => {
+        if (closeTimer !== null) {
+            window.clearTimeout(closeTimer);
+            closeTimer = null;
+        }
+    };
+    const scheduleClose = () => {
+        cancelClose();
+        closeTimer = window.setTimeout(() => {
+            // Re-check the mode — a click between schedule and fire turns
+            // a hover-pending close into a sticky open.
+            if (popoverOpenedBy === "hover")
+                closePopover();
+        }, 300);
+    };
+    const openPopover = (by) => {
+        cancelOpen();
+        cancelClose();
+        if (popoverOpen) {
+            // Upgrade a hover-open to click-stickiness if the user
+            // clicked while the popover was already hover-shown.
+            if (by === "click")
+                popoverOpenedBy = "click";
             return;
-        popover ??= createPopover(dashboardUrl);
+        }
+        if (!popover) {
+            popover = createPopover(dashboardUrl);
+            // Attach hover handlers ONCE — the popover element is reused
+            // across open/close cycles, so .remove() / .appendChild()
+            // doesn't shake the listeners off.
+            popover.addEventListener("mouseenter", cancelClose);
+            popover.addEventListener("mouseleave", () => {
+                if (popoverOpenedBy === "hover")
+                    scheduleClose();
+            });
+        }
         el.appendChild(popover);
         popoverOpen = true;
+        popoverOpenedBy = by;
         // Schedule one immediate redraw so the popover shows current
         // state, not a stale snapshot from the last close.
         requestRedraw();
     };
     const closePopover = () => {
+        cancelClose();
         if (!popoverOpen)
             return;
         popover?.remove();
         popoverOpen = false;
+        popoverOpenedBy = null;
     };
     el.addEventListener("click", (e) => {
         e.stopPropagation();
-        popoverOpen ? closePopover() : openPopover();
+        popoverOpen ? closePopover() : openPopover("click");
     });
     // Hover-open with 400ms delay — matches macOS tray tooltips.
     el.addEventListener("mouseenter", () => {
-        if (popoverHoverTimer !== null)
-            window.clearTimeout(popoverHoverTimer);
-        popoverHoverTimer = window.setTimeout(() => {
+        cancelClose(); // moving back onto badge cancels a pending close
+        cancelOpen();
+        openTimer = window.setTimeout(() => {
             if (!popoverOpen)
-                openPopover();
+                openPopover("hover");
         }, 400);
     });
-    el.addEventListener("mouseleave", (e) => {
-        if (popoverHoverTimer !== null) {
-            window.clearTimeout(popoverHoverTimer);
-            popoverHoverTimer = null;
-        }
-        // Don't auto-close on leave when there's still a popover open
-        // from a click — user is reading. The click-elsewhere handler
-        // below covers explicit dismissal.
-        void e;
+    el.addEventListener("mouseleave", () => {
+        cancelOpen();
+        // Only the hover branch auto-closes; click-opened stays sticky
+        // and dismisses via the click-outside handler below.
+        if (popoverOpenedBy === "hover")
+            scheduleClose();
     });
     // Click anywhere outside the badge closes the popover.
     document.addEventListener("click", (e) => {
