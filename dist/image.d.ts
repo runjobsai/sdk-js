@@ -104,12 +104,16 @@ export declare class ImageService {
         signal?: AbortSignal;
     }): Promise<ImageResponse>;
     /**
-     * Async equivalent of `generate()`. Submits a job, polls until terminal,
-     * downloads the result blobs. Use this when a request may exceed the
-     * ~100s origin timeout (Cloudflare otherwise replaces the real upstream
-     * error with its own 502 page).
+     * Async equivalent of `generate()`. Submits a job to
+     * `/v1/async/images/generations`, polls `/v1/async/images/generations/:id`
+     * until terminal, then resolves to a sync-shape `ImageResponse`. Use
+     * this when a request may exceed the ~100s origin timeout (Cloudflare
+     * otherwise replaces the real upstream error with its own 502 page).
      *
-     * The caller's `signal` deadline bounds the poll wait.
+     * Implementation is `submitGenerate` + `getAsyncStatus` poll loop, so
+     * the path layout matches the rest of the async API (`/v1/async/...`
+     * everywhere). The caller's `signal` aborts both the submit and the
+     * poll wait; `pollIntervalMs` defaults to 2s.
      */
     generateAsync(model: string, params: ImageGenerateParams, init?: {
         signal?: AbortSignal;

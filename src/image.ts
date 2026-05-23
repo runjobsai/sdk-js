@@ -132,27 +132,47 @@ export class ImageService {
   }
 
   /**
-   * Async equivalent of `generate()`. Submits a job, polls until terminal,
-   * downloads the result blobs. Use this when a request may exceed the
-   * ~100s origin timeout (Cloudflare otherwise replaces the real upstream
-   * error with its own 502 page).
+   * Async equivalent of `generate()`. Submits a job to
+   * `/v1/async/images/generations`, polls `/v1/async/images/generations/:id`
+   * until terminal, then resolves to a sync-shape `ImageResponse`. Use
+   * this when a request may exceed the ~100s origin timeout (Cloudflare
+   * otherwise replaces the real upstream error with its own 502 page).
    *
-   * The caller's `signal` deadline bounds the poll wait.
+   * Implementation is `submitGenerate` + `getAsyncStatus` poll loop, so
+   * the path layout matches the rest of the async API (`/v1/async/...`
+   * everywhere). The caller's `signal` aborts both the submit and the
+   * poll wait; `pollIntervalMs` defaults to 2s.
    */
   async generateAsync(
     model: string,
     params: ImageGenerateParams,
     init?: { signal?: AbortSignal; pollIntervalMs?: number },
   ): Promise<ImageResponse> {
+    const interval = init?.pollIntervalMs ?? 2000;
+    const signal = init?.signal;
     return wrapEvents(
       this.events,
       { model, capability: "image_generation" },
-      () =>
-        this.transport.postJSON<ImageResponse>(
-          "/v1/images/generations/async",
-          { model, ...params, _poll_interval_ms: init?.pollIntervalMs },
-          init,
-        ),
+      async () => {
+        const job = await this.transport.postJSON<AsyncImageJob>(
+          "/v1/async/images/generations",
+          { model, ...params },
+          { signal },
+        );
+        let current = job;
+        while (current.status !== "succeeded" && current.status !== "failed") {
+          await sleep(interval, signal);
+          current = await this.getAsyncStatus(current.id, { signal });
+        }
+        if (current.status === "failed") {
+          throw new Error(current.error ?? "image generation failed");
+        }
+        return {
+          created: current.created_at ?? Math.floor(Date.now() / 1000),
+          data: current.data ?? [],
+          usage: current.usage ?? { total_cost: 0 },
+        } satisfies ImageResponse;
+      },
       (r) => ({ costUSD: r.usage?.total_cost }),
     );
   }
@@ -228,6 +248,24 @@ export class ImageService {
       (r) => ({ costUSD: r.usage?.total_cost }),
     );
   }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error("aborted"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason ?? new Error("aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function buildEditForm(model: string, params: ImageEditParams): FormData {
