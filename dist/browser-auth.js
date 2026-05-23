@@ -49,6 +49,7 @@ export class BrowserAuth {
     /** Lazily-constructed when events are present — drives the badge's
      *  activity ring / LED / popover. nullable for tests / non-browser. */
     tracker;
+    badgePosition;
     token = null;
     expiresAt = 0;
     userInfo = null;
@@ -60,6 +61,7 @@ export class BrowserAuth {
         this.hideBadge = !!opts.hideBadge;
         this.project = opts.project ?? null;
         this.events = opts.events ?? null;
+        this.badgePosition = opts.badgePosition ?? "bottom-right";
         if (this.events && !this.hideBadge) {
             this.tracker = new ActivityTracker();
             this.tracker.attach(this.events);
@@ -435,13 +437,33 @@ export class BrowserAuth {
                 user: this.userInfo,
                 dashboardUrl,
                 tracker: this.tracker,
+                position: this.badgePosition,
             });
             document.body.appendChild(root);
         });
     }
 }
+/**
+ * Per-corner CSS overrides for the floating badge + its popover.
+ * `top` vs `bottom` flips the badge's vertical anchor AND the
+ * popover's open direction (top-anchored badge → popover opens
+ * downward); `right` vs `left` flips horizontal anchor on both.
+ */
+function badgeCornerStyles(position) {
+    const v = position.startsWith("top") ? "top" : "bottom";
+    const h = position.endsWith("right") ? "right" : "left";
+    // Popover sits on the OPPOSITE vertical side of the badge so it
+    // grows AWAY from the edge of the viewport, never offscreen.
+    const popoverVerticalAnchor = v === "bottom" ? "bottom:calc(100% + 8px);top:auto" : "top:calc(100% + 8px);bottom:auto";
+    const popoverHorizontalAnchor = h === "right" ? "right:0;left:auto" : "left:0;right:auto";
+    return {
+        badge: `${v}:16px;${h}:16px`,
+        popover: `${popoverVerticalAnchor};${popoverHorizontalAnchor}`,
+    };
+}
 function mountActivityBadge(opts) {
-    const { id, user, dashboardUrl, tracker } = opts;
+    const { id, user, dashboardUrl, tracker, position } = opts;
+    const corners = badgeCornerStyles(position);
     const el = document.createElement("button");
     el.id = id;
     el.type = "button";
@@ -449,8 +471,7 @@ function mountActivityBadge(opts) {
     el.setAttribute("aria-label", "RunJobs activity status");
     el.style.cssText = [
         "position:fixed",
-        "bottom:16px",
-        "right:16px",
+        corners.badge,
         "z-index:2147483647",
         "display:flex",
         "align-items:center",
@@ -603,7 +624,7 @@ function mountActivityBadge(opts) {
             return;
         }
         if (!popover) {
-            popover = createPopover(dashboardUrl);
+            popover = createPopover(dashboardUrl, corners.popover);
             // Attach hover handlers ONCE — the popover element is reused
             // across open/close cycles, so .remove() / .appendChild()
             // doesn't shake the listeners off.
@@ -760,7 +781,7 @@ function updateLED(led, snap) {
             break;
     }
 }
-function createPopover(dashboardUrl) {
+function createPopover(dashboardUrl, anchorCss) {
     // Inject the LED pulse keyframes once (idempotent).
     if (!document.getElementById("__runjobs_kf__")) {
         const style = document.createElement("style");
@@ -776,8 +797,10 @@ function createPopover(dashboardUrl) {
     const pop = document.createElement("div");
     pop.style.cssText = [
         "position:absolute",
-        "bottom:calc(100% + 8px)",
-        "right:0",
+        // Anchor varies by badge corner — see badgeCornerStyles. Splits
+        // top/bottom + left/right so the popover always grows TOWARDS
+        // the viewport interior.
+        anchorCss,
         "min-width:280px;max-width:340px",
         "padding:10px 12px",
         "border-radius:10px",

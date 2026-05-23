@@ -54,6 +54,19 @@ export interface ClientOptions {
    */
   showIdentityBadge?: boolean;
   /**
+   * Which corner the identity badge floats in. Defaults to
+   * `"bottom-right"` — the canonical tray-app position. Switch to
+   * `"bottom-left"` when the bundle's own UI occupies the right
+   * gutter (e.g. a chat dock); the top corners are useful for
+   * fullscreen / portrait kiosk layouts.
+   *
+   * The popover anchors itself to the same corner — bottom-left
+   * badge → popover opens up + right of the badge; top-* badges →
+   * popover opens down. Each corner only nudges the CSS; the badge
+   * + popover content is identical.
+   */
+  badgePosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  /**
    * @deprecated Use `showIdentityBadge` instead.  Kept for back-compat;
    * acts as `showIdentityBadge: !hideIdentityBadge` when set.
    */
@@ -166,6 +179,7 @@ export class RunJobs {
         // pass even when the caller never subscribes — emit is a few
         // property reads when nobody's listening.
         events: this.events,
+        ...(options.badgePosition !== undefined && { badgePosition: options.badgePosition }),
         ...(options.project !== undefined && { project: options.project }),
       });
       (this as { auth: BrowserAuth | null }).auth = auth;

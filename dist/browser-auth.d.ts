@@ -48,7 +48,14 @@ export interface BrowserAuthOptions {
      * true), the badge falls back to its original static behaviour.
      */
     events?: SDKEvents;
+    /**
+     * Which corner the badge floats in. See `RunJobs.badgePosition`
+     * for the user-facing flavour. Defaults to `"bottom-right"`.
+     */
+    badgePosition?: BadgePosition;
 }
+/** Four-corner anchor for the floating activity badge. */
+export type BadgePosition = "bottom-right" | "bottom-left" | "top-right" | "top-left";
 export interface BrowserUser {
     id?: string;
     name?: string;
@@ -73,6 +80,7 @@ export declare class BrowserAuth {
     /** Lazily-constructed when events are present — drives the badge's
      *  activity ring / LED / popover. nullable for tests / non-browser. */
     private readonly tracker;
+    private readonly badgePosition;
     private token;
     private expiresAt;
     private userInfo;

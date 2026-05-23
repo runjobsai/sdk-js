@@ -92,6 +92,7 @@ export class RunJobs {
                 // pass even when the caller never subscribes — emit is a few
                 // property reads when nobody's listening.
                 events: this.events,
+                ...(options.badgePosition !== undefined && { badgePosition: options.badgePosition }),
                 ...(options.project !== undefined && { project: options.project }),
             });
             this.auth = auth;
