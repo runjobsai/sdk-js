@@ -142,6 +142,17 @@ export declare class BrowserAuth {
         redirectTo: string;
         scheme: "light" | "dark";
     }): string;
+    /**
+     * Return the localStorage keys this instance reads / writes for its
+     * persisted token + sign-out flag.  Exposed for tests so we can
+     * assert per-project namespacing without a real DOM; not part of
+     * the public API surface (the leading underscore + `ForTest` suffix
+     * is the SDK's convention for this).
+     */
+    _storageKeysForTest(): {
+        auth: string;
+        signedOut: string;
+    };
     private buildGrantUrl;
     private nowSec;
     private tokenIsFresh;

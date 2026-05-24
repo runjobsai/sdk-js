@@ -89,13 +89,41 @@ export interface BrowserUser {
 }
 
 const TOKEN_REFRESH_MARGIN_S = 60;
-const STORAGE_KEY = "__runjobs_auth_v1__";
+// Per-project localStorage namespacing.  When two BrowserAuth bundles
+// live on the same origin (most commonly `localhost:5173` during
+// development of multiple SDK-using apps, or a deployed origin that
+// hosts more than one bundle), a single shared key would let them
+// clobber each other's tokens — bundle B's signIn() would overwrite
+// the token bundle A had cached, and the next time A booted it'd
+// either reuse B's token (wrong project scope, every gateway call
+// returns 404 on `files/...`) or skip the cache and redirect through
+// the grant flow on every reload.  Append the constructor-supplied
+// `project` to the key so bundles scoped to different projects keep
+// independent slots in localStorage.  Bundles without an explicit
+// project (iframe / parent-handshake mode) fall back to the legacy
+// unsuffixed key, which preserves back-compat for already-persisted
+// tokens after upgrade.
+const STORAGE_KEY_BASE = "__runjobs_auth_v1__";
 // Set when the user clicks "Sign out".  While present, getToken() must
 // not silently redirect to the grant page even though the user still
 // has a runjobs.ai cookie — otherwise the backend's auto-grant turns
 // every page reload into a re-authentication.  Cleared on explicit
-// signIn() so the user can come back.
-const SIGNED_OUT_KEY = "__runjobs_signed_out_v1__";
+// signIn() so the user can come back.  Same per-project namespacing
+// rationale as STORAGE_KEY_BASE — signing out of bundle A shouldn't
+// also sign out bundle B that happens to share the origin.
+const SIGNED_OUT_KEY_BASE = "__runjobs_signed_out_v1__";
+
+/** Compose the localStorage key for an auth slot.  `null` project
+ *  yields the base key (iframe-mode and pre-v1.x bundles), which
+ *  preserves back-compat for tokens persisted before this change. */
+function storageKey(project: string | null): string {
+  return project ? `${STORAGE_KEY_BASE}:${project}` : STORAGE_KEY_BASE;
+}
+
+/** Same as storageKey, for the sticky sign-out flag. */
+function signedOutKey(project: string | null): string {
+  return project ? `${SIGNED_OUT_KEY_BASE}:${project}` : SIGNED_OUT_KEY_BASE;
+}
 
 interface PersistedAuth {
   token: string;
@@ -305,6 +333,20 @@ export class BrowserAuth {
     return this.buildGrantUrl(args);
   }
 
+  /**
+   * Return the localStorage keys this instance reads / writes for its
+   * persisted token + sign-out flag.  Exposed for tests so we can
+   * assert per-project namespacing without a real DOM; not part of
+   * the public API surface (the leading underscore + `ForTest` suffix
+   * is the SDK's convention for this).
+   */
+  _storageKeysForTest(): { auth: string; signedOut: string } {
+    return {
+      auth: storageKey(this.project),
+      signedOut: signedOutKey(this.project),
+    };
+  }
+
   private buildGrantUrl(args: {
     pageOrigin: string;
     app: string;
@@ -364,7 +406,7 @@ export class BrowserAuth {
         origin: this.origin,
         ...(this.userInfo ? { user: this.userInfo } : {}),
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(storageKey(this.project), JSON.stringify(data));
     } catch {
       /* quota / private mode — degrade to in-memory only */
     }
@@ -373,7 +415,7 @@ export class BrowserAuth {
   private loadPersisted() {
     if (typeof localStorage === "undefined") return;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey(this.project));
       if (!raw) return;
       const data = JSON.parse(raw) as Partial<PersistedAuth>;
       if (!data.token || !data.origin) return;
@@ -398,28 +440,28 @@ export class BrowserAuth {
   private clearPersisted() {
     if (typeof localStorage === "undefined") return;
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(storageKey(this.project));
     } catch { /* ignore */ }
   }
 
   private isSignedOut(): boolean {
     if (typeof localStorage === "undefined") return false;
     try {
-      return localStorage.getItem(SIGNED_OUT_KEY) === "1";
+      return localStorage.getItem(signedOutKey(this.project)) === "1";
     } catch { return false; }
   }
 
   private markSignedOut() {
     if (typeof localStorage === "undefined") return;
     try {
-      localStorage.setItem(SIGNED_OUT_KEY, "1");
+      localStorage.setItem(signedOutKey(this.project), "1");
     } catch { /* ignore */ }
   }
 
   private clearSignedOut() {
     if (typeof localStorage === "undefined") return;
     try {
-      localStorage.removeItem(SIGNED_OUT_KEY);
+      localStorage.removeItem(signedOutKey(this.project));
     } catch { /* ignore */ }
   }
 
