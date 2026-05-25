@@ -610,6 +610,29 @@ interface MountOpts {
  * popover's open direction (top-anchored badge → popover opens
  * downward); `right` vs `left` flips horizontal anchor on both.
  */
+/**
+ * Inject the `@keyframes __runjobs_led_pulse__` rule into the document
+ * head ONCE (idempotent — re-mounts and multiple SDK instances on the
+ * same page share the same rule). Must run at badge mount time so
+ * the LED's `animation` CSS resolves the keyframe reference the
+ * moment status flips from idle to active — previously this lived
+ * inside createPopover() and only fired on first hover, leaving the
+ * LED frozen until the user interacted.
+ */
+function ensurePulseKeyframes(): void {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("__runjobs_kf__")) return;
+  const style = document.createElement("style");
+  style.id = "__runjobs_kf__";
+  style.textContent =
+    "@keyframes __runjobs_led_pulse__ {" +
+    "  0%   { box-shadow: 0 0 0 0   rgba(59,130,246,0.7); }" +
+    "  70%  { box-shadow: 0 0 0 6px rgba(59,130,246,0);   }" +
+    "  100% { box-shadow: 0 0 0 0   rgba(59,130,246,0);   }" +
+    "}";
+  (document.head ?? document.documentElement).appendChild(style);
+}
+
 function badgeCornerStyles(position: BadgePosition): {
   badge: string;
   popover: string;
@@ -630,6 +653,13 @@ function badgeCornerStyles(position: BadgePosition): {
 function mountActivityBadge(opts: MountOpts): HTMLButtonElement {
   const { id, user, dashboardUrl, tracker, position } = opts;
   const corners = badgeCornerStyles(position);
+  // Inject the LED pulse keyframes at mount time. Previously this
+  // lived inside createPopover() — which only runs on first hover —
+  // so the LED's `animation` CSS referenced a keyframe rule that
+  // didn't exist until the user hovered, and the browser silently
+  // skipped the animation. Result: LED stayed solid until hover,
+  // exactly matching the bug report.
+  ensurePulseKeyframes();
   const el = document.createElement("button");
   el.id = id;
   el.type = "button";
@@ -961,18 +991,6 @@ function updateLED(led: HTMLSpanElement, snap: ActivitySnapshot): void {
 }
 
 function createPopover(dashboardUrl: string, anchorCss: string): HTMLDivElement {
-  // Inject the LED pulse keyframes once (idempotent).
-  if (!document.getElementById("__runjobs_kf__")) {
-    const style = document.createElement("style");
-    style.id = "__runjobs_kf__";
-    style.textContent =
-      "@keyframes __runjobs_led_pulse__ {" +
-      "  0%   { box-shadow: 0 0 0 0   rgba(59,130,246,0.7); }" +
-      "  70%  { box-shadow: 0 0 0 6px rgba(59,130,246,0);   }" +
-      "  100% { box-shadow: 0 0 0 0   rgba(59,130,246,0);   }" +
-      "}";
-    document.head.appendChild(style);
-  }
   const pop = document.createElement("div");
   pop.style.cssText = [
     "position:absolute",
