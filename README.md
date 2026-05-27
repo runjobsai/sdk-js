@@ -25,7 +25,7 @@ Or via CDN for `<script>`-tag use:
 ```ts
 import { RunJobs, APIError } from "@runjobsai/sdk";
 
-const client = new RunJobs({ apiKey: "gw-your-api-key" });
+const client = new RunJobs({ apiKey: "rk_your-api-key" });
 
 try {
   const resp = await client.chat.create({
@@ -46,10 +46,43 @@ Default base URL is `https://api.runjobs.ai`. Override with `new RunJobs({ apiKe
 
 | Mode | Use for | How |
 |------|---------|-----|
-| **Static** (default) | Server / CLI | `new RunJobs({ apiKey: "gw-…" })` or `apiKeyResolver: async () => "…"` |
+| **Static** (default) | Server / CLI | `new RunJobs({ apiKey: "rk_…" })` or `apiKeyResolver: async () => "…"` |
 | **runjobs.ai browser auth** | Client-side bundles | `new RunJobs({ authProvider: "runjobs" })` |
 
-API key prefixes: `gw-…` (user-level), `rj_…` (workspace agent), `rrt_…` (resource SDK token; project-bound when `project_id` resolves, otherwise unbound — files still work but live under the user's `_unbound/` namespace).
+API key prefixes: `rk_…` (personal key from Dashboard → Settings → API Keys), `rj_…` (workspace agent), `rrt_…` (resource SDK token; project-bound when `project_id` resolves, otherwise unbound — files still work but live under the user's `_unbound/` namespace).
+
+### Drop-in OpenAI / Anthropic SDK
+
+The runjobs gateway speaks the OpenAI Chat Completions wire format, so you can use **any OpenAI-compatible SDK** by pointing its `baseURL` at `https://www.runjobs.ai/v1` and using your `rk_…` key. No runjobs SDK install required if you don't need the platform-specific helpers (server tools, file system, etc.).
+
+```python
+# OpenAI Python SDK — works against every model in the catalog
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="rk_...",                          # from Dashboard → Settings → API Keys
+    base_url="https://www.runjobs.ai/v1",
+)
+resp = client.chat.completions.create(
+    model="Claude Sonnet 4.6",                 # any model from /v1/models
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(resp.choices[0].message.content)
+```
+
+```python
+# Anthropic Python SDK — same idea, point base_url at our gateway
+from anthropic import Anthropic
+
+client = Anthropic(api_key="rk_...", base_url="https://www.runjobs.ai")
+msg = client.messages.create(
+    model="Claude Sonnet 4.6",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+```
+
+One key, all models — Claude, GPT, Gemini, DeepSeek, Qwen, MiniMax, GLM, Grok. Browse `/v1/models` (no auth needed) for the live catalog and per-model pricing.
 
 ### Browser auth (`authProvider: "runjobs"`)
 
@@ -568,7 +601,7 @@ Browser-auth mode automatically retries once on `401` (with the cached token inv
 ## Compatibility
 
 - **Node**: 18+ (uses built-in `fetch`).
-- **Browsers**: any modern browser. For static auth, proxy through your own backend — don't ship `gw-…` keys to clients. For runjobs.ai-issued bundles, use `authProvider: "runjobs"`.
+- **Browsers**: any modern browser. For static auth, proxy through your own backend — don't ship `rk_…` keys to clients. For runjobs.ai-issued bundles, use `authProvider: "runjobs"`.
 - **Deno / Bun**: works out of the box.
 
 ## License
