@@ -1,4 +1,10 @@
 import { wrapEvents, wrapStream } from "./event-wrap.js";
+/** Typed constants for {@link ServerToolName} so you get autocomplete. */
+export const ServerTools = {
+    WebSearch: "web_search",
+    WebFetch: "web_fetch",
+    TwitterSearch: "twitter_search",
+};
 /* ------------------------------------------------------------------ */
 /* Convenience builders                                                */
 /* ------------------------------------------------------------------ */

@@ -291,7 +291,16 @@ const resp = await client.chat.create({
 console.log(resp.choices[0].message.content);     // factual, search-informed answer
 ```
 
-Available `ServerTools`: `WebSearch` (Brave), `WebFetch` (HTTP GET + HTML-to-text), `TwitterSearch`. Billed as normal LLM tokens per iteration; web search itself is free under fair use. For image generation, audio synthesis, OCR, transcription, document generation, etc. use the dedicated `client.image.*` / `client.audio.*` endpoints directly — they're cheaper and don't need an LLM in the loop.
+Available `ServerTools`: `WebSearch` (Brave), `WebFetch` (HTTP GET + HTML-to-text), `TwitterSearch`. For image generation, audio synthesis, OCR, transcription, document generation, etc. use the dedicated `client.image.*` / `client.audio.*` endpoints directly — they're cheaper and don't need an LLM in the loop.
+
+**Billing & per-tool breakdown** — each iteration is billed as a normal LLM token charge. Server tools that are priced (e.g. `web_search`, `twitter_search`) are charged at their per-call rate against your account; `web_fetch` is free. `resp.usage.total_cost` rolls up the model spend plus every tool charge, and `resp.usage.tool_costs` is the per-tool breakdown:
+
+```ts
+console.log(resp.usage.total_cost);          // 0.0123 (model + tools, USD)
+for (const t of resp.usage.tool_costs ?? []) {
+  console.log(t.name, t.count, t.cost);      // "web_search" 2 0.01
+}
+```
 
 Streaming works with `server_tools` — intermediate LLM iterations happen silently, then the final answer streams normally. You'll see a brief delay before the first chunk arrives, then standard SSE.
 

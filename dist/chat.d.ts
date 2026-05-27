@@ -51,6 +51,29 @@ export interface ChatTool {
 export interface StreamOptions {
     include_usage: boolean;
 }
+/**
+ * Names of platform-executed tools the SDK can ask the gateway to run on
+ * its behalf during a chat completion.  When you set `server_tools` on a
+ * `ChatCompletionParams`, the gateway resolves each name to its tool
+ * schema, sends both server tools and your own `tools` (if any) to the
+ * model, then handles any server-tool calls itself — looping with the
+ * model until it produces a final answer.  Your code only sees the final
+ * response; you don't have to implement web search yourself.
+ *
+ * The whitelist is intentionally narrow.  For image, audio, file, and
+ * vision generation the SDK already exposes dedicated endpoints
+ * (`client.image.*`, `client.audio.*`, etc.) that callers should hit
+ * directly instead of paying for an LLM-in-the-middle.  Search-class
+ * tools live here because they need the model in the loop — "search →
+ * read result → fetch → answer" can't be expressed as a single call.
+ */
+export type ServerToolName = "web_search" | "web_fetch" | "twitter_search";
+/** Typed constants for {@link ServerToolName} so you get autocomplete. */
+export declare const ServerTools: {
+    readonly WebSearch: "web_search";
+    readonly WebFetch: "web_fetch";
+    readonly TwitterSearch: "twitter_search";
+};
 export interface ChatCompletionParams {
     model: string;
     messages: ChatMessage[];
@@ -67,6 +90,20 @@ export interface ChatCompletionParams {
     metadata?: Record<string, unknown>;
     stream?: boolean;
     stream_options?: StreamOptions;
+    /**
+     * Names of platform-executed tools — the gateway will run these for
+     * you and loop with the model until it produces a final answer.  Mix
+     * freely with your own `tools`: the model can call either; the
+     * platform handles the server ones, your code handles the rest.
+     */
+    server_tools?: ServerToolName[];
+    /**
+     * Maximum number of LLM round-trips the server-tool loop will make
+     * (default 5, hard cap 10).  Only meaningful when `server_tools` is
+     * set.  Tune up for chains like "search → fetch → answer", down for
+     * tighter cost guarantees.
+     */
+    max_server_iterations?: number;
     /** Pass-through for provider-specific knobs. */
     [extra: string]: unknown;
 }

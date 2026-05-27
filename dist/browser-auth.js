@@ -477,6 +477,11 @@ export class BrowserAuth {
                 dashboardUrl,
                 tracker: this.tracker,
                 position: this.badgePosition,
+                // Bind through `this` so the popover's Sign-out button runs
+                // BrowserAuth.signOut (clears token cache + flips signed-out
+                // flag + dispatches the auth event); a plain method reference
+                // would lose `this`.
+                onSignOut: () => this.signOut(),
             });
             document.body.appendChild(root);
         });
@@ -525,7 +530,7 @@ function badgeCornerStyles(position) {
     };
 }
 function mountActivityBadge(opts) {
-    const { id, user, dashboardUrl, tracker, position } = opts;
+    const { id, user, dashboardUrl, tracker, position, onSignOut } = opts;
     const corners = badgeCornerStyles(position);
     // Inject the LED pulse keyframes at mount time. Previously this
     // lived inside createPopover() — which only runs on first hover —
@@ -694,7 +699,14 @@ function mountActivityBadge(opts) {
             return;
         }
         if (!popover) {
-            popover = createPopover(dashboardUrl, corners.popover);
+            popover = createPopover(dashboardUrl, corners.popover, () => {
+                // Tear down our DOM before the auth flip runs so the popover
+                // doesn't briefly show "signed out" state to a user who's
+                // about to navigate away.  closePopover() also removes the
+                // hover/click handlers' state.
+                closePopover();
+                onSignOut();
+            });
             // Attach hover handlers ONCE — the popover element is reused
             // across open/close cycles, so .remove() / .appendChild()
             // doesn't shake the listeners off.
@@ -851,7 +863,7 @@ function updateLED(led, snap) {
             break;
     }
 }
-function createPopover(dashboardUrl, anchorCss) {
+function createPopover(dashboardUrl, anchorCss, onSignOut) {
     const pop = document.createElement("div");
     pop.style.cssText = [
         "position:absolute",
@@ -894,6 +906,33 @@ function createPopover(dashboardUrl, anchorCss) {
     dash.rel = "noopener noreferrer";
     dash.style.cssText = "color:#a78bfa;text-decoration:none";
     footer.appendChild(dash);
+    // Sign-out lives opposite the dashboard link.  Styled subtle on
+    // purpose — it's a destructive-ish action (drops the token cache,
+    // forces the next API call into the signIn redirect) but not
+    // dangerous, and we don't want it to compete visually with the
+    // dashboard CTA.  Hover highlights it red as a "this is the action
+    // that ends your session" cue.
+    const signOutBtn = document.createElement("button");
+    signOutBtn.type = "button";
+    signOutBtn.textContent = "Sign out";
+    signOutBtn.style.cssText = [
+        "background:none;border:0;padding:0;margin:0",
+        "font:inherit;cursor:pointer",
+        "color:rgba(255,255,255,0.55)",
+        "transition:color 120ms ease",
+    ].join(";");
+    signOutBtn.addEventListener("mouseenter", () => {
+        signOutBtn.style.color = "#f87171";
+    });
+    signOutBtn.addEventListener("mouseleave", () => {
+        signOutBtn.style.color = "rgba(255,255,255,0.55)";
+    });
+    signOutBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSignOut();
+    });
+    footer.appendChild(signOutBtn);
     pop.appendChild(footer);
     return pop;
 }
