@@ -244,6 +244,24 @@ await client.chat.create({
 
 **Tool calling** — populate `tools: [{ type: "function", function: { name, description, parameters } }]`, read `choices[0].message.tool_calls`, return `toolResultMessage(toolCallId, jsonOutput)` on the next turn.
 
+**Server-executed tools** — let the platform run web search, file generation, image generation, etc. on your behalf. The gateway loops with the model until it produces a final answer; your code only sees the result. Mix freely with your own `tools` — the model can call either; the platform handles the server ones, your code handles the rest.
+
+```ts
+import { ServerTools } from "@runjobsai/sdk";
+
+const resp = await client.chat.create({
+  model: "Claude Sonnet 4.6",
+  messages: [{ role: "user", content: "What is the latest stable Go version?" }],
+  server_tools: [ServerTools.WebSearch],          // platform runs Brave search
+  max_server_iterations: 5,                       // cap LLM round-trips (default 5, max 10)
+});
+console.log(resp.choices[0].message.content);     // factual, search-informed answer
+```
+
+Available `ServerTools`: `WebSearch`, `WebFetch`, `TwitterSearch`, `AnalyzeImage`, `GenerateImage`, `EditImage`, `GeneratePDF`, `GenerateDOCX`, `GenerateTTS`, `TranscribeAudio`. Each is billed normally — LLM tokens for every iteration, plus the tool's own cost (image generation, TTS, etc. carry fixed per-call prices; web search is free under fair use).
+
+Streaming works with `server_tools` — intermediate LLM iterations happen silently, then the final answer streams normally. You'll see a brief delay before the first chunk arrives, then standard SSE.
+
 Builders re-exported from the top level: `userMessage`, `systemMessage`, `assistantMessage`, `toolResultMessage`, `userMessageParts`, `textPart`, `imagePart`, `videoPart`, `audioPart`.
 
 ### `client.embeddings`
