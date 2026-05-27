@@ -53,35 +53,22 @@ export interface StreamOptions {
  * schema, sends both server tools and your own `tools` (if any) to the
  * model, then handles any server-tool calls itself — looping with the
  * model until it produces a final answer.  Your code only sees the final
- * response; you don't have to implement web search, image generation,
- * etc. yourself.
+ * response; you don't have to implement web search yourself.
  *
- * Add new names to {@link ServerTools} when the backend whitelist grows.
+ * The whitelist is intentionally narrow.  For image, audio, file, and
+ * vision generation the SDK already exposes dedicated endpoints
+ * (`client.image.*`, `client.audio.*`, etc.) that callers should hit
+ * directly instead of paying for an LLM-in-the-middle.  Search-class
+ * tools live here because they need the model in the loop — "search →
+ * read result → fetch → answer" can't be expressed as a single call.
  */
-export type ServerToolName =
-  | "web_search"
-  | "web_fetch"
-  | "twitter_search"
-  | "analyze_image"
-  | "generate_image"
-  | "edit_image"
-  | "generate_pdf"
-  | "generate_docx"
-  | "generate_tts"
-  | "transcribe_audio";
+export type ServerToolName = "web_search" | "web_fetch" | "twitter_search";
 
 /** Typed constants for {@link ServerToolName} so you get autocomplete. */
 export const ServerTools = {
   WebSearch: "web_search",
   WebFetch: "web_fetch",
   TwitterSearch: "twitter_search",
-  AnalyzeImage: "analyze_image",
-  GenerateImage: "generate_image",
-  EditImage: "edit_image",
-  GeneratePDF: "generate_pdf",
-  GenerateDOCX: "generate_docx",
-  GenerateTTS: "generate_tts",
-  TranscribeAudio: "transcribe_audio",
 } as const;
 
 export interface ChatCompletionParams {

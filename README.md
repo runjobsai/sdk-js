@@ -244,7 +244,7 @@ await client.chat.create({
 
 **Tool calling** — populate `tools: [{ type: "function", function: { name, description, parameters } }]`, read `choices[0].message.tool_calls`, return `toolResultMessage(toolCallId, jsonOutput)` on the next turn.
 
-**Server-executed tools** — let the platform run web search, file generation, image generation, etc. on your behalf. The gateway loops with the model until it produces a final answer; your code only sees the result. Mix freely with your own `tools` — the model can call either; the platform handles the server ones, your code handles the rest.
+**Server-executed search tools** — let the platform run live web search and content fetching on your behalf so the LLM can ground its answers in current information without you wiring up search infrastructure. The gateway loops with the model until it produces a final answer; your code only sees the result. Mix freely with your own `tools` — the model can call either; the platform handles the server ones, your code handles the rest.
 
 ```ts
 import { ServerTools } from "@runjobsai/sdk";
@@ -252,13 +252,13 @@ import { ServerTools } from "@runjobsai/sdk";
 const resp = await client.chat.create({
   model: "Claude Sonnet 4.6",
   messages: [{ role: "user", content: "What is the latest stable Go version?" }],
-  server_tools: [ServerTools.WebSearch],          // platform runs Brave search
+  server_tools: [ServerTools.WebSearch, ServerTools.WebFetch],
   max_server_iterations: 5,                       // cap LLM round-trips (default 5, max 10)
 });
 console.log(resp.choices[0].message.content);     // factual, search-informed answer
 ```
 
-Available `ServerTools`: `WebSearch`, `WebFetch`, `TwitterSearch`, `AnalyzeImage`, `GenerateImage`, `EditImage`, `GeneratePDF`, `GenerateDOCX`, `GenerateTTS`, `TranscribeAudio`. Each is billed normally — LLM tokens for every iteration, plus the tool's own cost (image generation, TTS, etc. carry fixed per-call prices; web search is free under fair use).
+Available `ServerTools`: `WebSearch` (Brave), `WebFetch` (HTTP GET + HTML-to-text), `TwitterSearch`. Billed as normal LLM tokens per iteration; web search itself is free under fair use. For image generation, audio synthesis, OCR, transcription, document generation, etc. use the dedicated `client.image.*` / `client.audio.*` endpoints directly — they're cheaper and don't need an LLM in the loop.
 
 Streaming works with `server_tools` — intermediate LLM iterations happen silently, then the final answer streams normally. You'll see a brief delay before the first chunk arrives, then standard SSE.
 
