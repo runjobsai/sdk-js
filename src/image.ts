@@ -3,15 +3,42 @@ import type { Usage } from "./types.js";
 import type { SDKEvents } from "./events.js";
 import { wrapEvents } from "./event-wrap.js";
 
+/**
+ * Image generation request.
+ *
+ * Sizing: prefer the 2-axis `resolution` + `aspect_ratio` controls —
+ * the gateway translates them into a concrete WxH from the target
+ * model's declared size enum. `size` is the legacy explicit override;
+ * when set, it wins over `(resolution, aspect_ratio)`. When none of
+ * the three is set, the gateway / upstream applies its own default.
+ */
 export interface ImageGenerateParams {
   prompt: string;
+  /** Legacy explicit "WxH" override. Prefer `resolution` +
+   *  `aspect_ratio` for new code. */
   size?: string;
+  /** Short-side pixel tier — "512P" | "1K" | "2K" | "4K".
+   *  Model-specific subset; `/v1/models` advertises which tiers each
+   *  image model supports. */
+  resolution?: string;
+  /** Output shape — "1:1" | "9:16" | "16:9" | "3:4" | "4:3" | "3:2"
+   *  | "2:3" | "5:4" | "4:5" | "21:9" | "adaptive". Model-specific
+   *  subset; see `/v1/models`. */
+  aspect_ratio?: string;
   n?: number;
-  quality?: string;
   style?: string;
   reference_image_urls?: string[];
   user?: string;
-  /** Pass-through for provider-specific knobs. */
+  /**
+   * Pass-through for provider-specific knobs.
+   *
+   * Note: `quality` (OpenAI's render-quality preset
+   * — "low"/"medium"/"high"/"auto") was removed from the canonical
+   * surface. Only one upstream used it and its own default ("auto") is
+   * already optimal; the field caused naming confusion with the
+   * "画质" resolution-tier control. The gateway silently drops it
+   * from inbound requests, so legacy callers keep working.
+   */
   [extra: string]: unknown;
 }
 

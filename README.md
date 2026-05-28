@@ -326,7 +326,8 @@ console.log(`Cost: $${r.usage.total_cost.toFixed(6)}`);
 ```ts
 const img = await client.image.generate("MiniMax Image-01", {
   prompt: "a developer at a laptop, anime style",
-  size: "1024x1024",
+  resolution: "2K",      // short-side tier — see /v1/models for per-model enum
+  aspect_ratio: "16:9",  // "adaptive" lets upstream pick
   n: 1,
   reference_image_urls: ["https://..."],
 });
@@ -346,6 +347,15 @@ await client.image.edit("GPT Image", {
   prompt: "add a party hat",
 });
 ```
+
+**Sizing.** `ImageGenerateParams` exposes two complementary controls:
+
+- **`resolution`** + **`aspect_ratio`** (recommended) — gateway translates the 2-axis pair into a concrete WxH from the target model's declared size enum. `resolution` is a short-side pixel tier (`"512P"` / `"1K"` / `"2K"` / `"4K"`); `aspect_ratio` is a shape string (`"1:1"`, `"16:9"`, `"9:16"`, `"3:4"`, `"4:3"`, `"3:2"`, `"2:3"`, `"5:4"`, `"4:5"`, `"21:9"`, or `"adaptive"`). Each image model advertises which tiers + ratios it supports via `/v1/models` — pick from that enum.
+- **`size`** (legacy) — explicit `"WxH"` override. When set, wins over `(resolution, aspect_ratio)`. Keep using it for code paths that need a specific pixel count and don't care about the upstream's preset list; new code should reach for the 2-axis controls.
+
+When all three are absent, the gateway / upstream applies its own default.
+
+`quality` (OpenAI's render-quality preset) was removed from the canonical surface in 2026-05. Inbound `quality` is silently dropped; OpenAI's own default (`"auto"`) takes over — no client change needed.
 
 **Async** — `client.image.generateAsync()` for requests that may exceed the ~100 s origin timeout (large Seedream batches, slow upstreams). Returns the same `ImageResponse` shape.
 

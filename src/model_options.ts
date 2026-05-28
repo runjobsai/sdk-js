@@ -55,6 +55,18 @@ export interface FieldSchema {
    *   "radio"        — small enum
    *   "voice_picker" — string with values from catalog.voices
    *   "code"         — long string with syntax highlighting
+   *   "segmented"    — pill-shaped row of enum values (compact,
+   *                    horizontal). Best for short ordered enums
+   *                    like the resolution tier (512P / 1K / 2K /
+   *                    4K) in image generation. Renders as a single
+   *                    line; selected option has solid background.
+   *   "tile"         — grid of square cards, each carrying a small
+   *                    visual proxy for the value (aspect-ratio
+   *                    shape icon, or fit-brackets for the
+   *                    "adaptive" sentinel). Used for aspect_ratio
+   *                    in image generation. When the enum includes
+   *                    "adaptive" or "auto", that entry is
+   *                    promoted to a row-spanning anchor block.
    * Unknown values fall back to the type default (forward-compat).
    */
   widget?: string;
