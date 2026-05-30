@@ -2,7 +2,8 @@
 // /Users/zero/repos/sdk-go/validate.go — three-pass algorithm,
 // same field/constraint vocabulary, same parse logic.
 
-import type { Schema, FieldSchema, Constraint } from "./model_options.js";
+import { normalizeGroups } from "./model_options.js";
+import type { Schema, FieldSchema, Constraint, Group } from "./model_options.js";
 
 export interface ValidationError {
   field: string;
@@ -32,6 +33,14 @@ export function validateRequest(
       const val = req[name];
       if (set && !isEmpty(val)) {
         errors.push(...validateFieldValue(name, field, val));
+      } else if (set && field.min_items !== undefined) {
+        // Empty array trips min_items even when isEmpty() short-
+        // circuits validateFieldValue. Mirrors the sdk-go fix: bound
+        // was declared explicitly, dropping it silently would let a
+        // client POST `groups: []` to a schema that requires >=1.
+        if (Array.isArray(val) && val.length < field.min_items) {
+          errors.push({ field: name, reason: `at least ${field.min_items} items` });
+        }
       }
       errors.push(...validatePresence(name, field, val, set));
     }
@@ -79,13 +88,82 @@ function validateFieldValue(
     }
   }
 
-  if (field.max_items !== undefined && Array.isArray(val) && val.length > field.max_items) {
-    errors.push({
-      field: name,
-      reason: `at most ${field.max_items} items`,
-    });
+  // Array bounds — apply to scalar array Types ("url[]", "string[]")
+  // AND to `repeatable` object groups whose value is a JSON array.
+  if (Array.isArray(val)) {
+    if (field.max_items !== undefined && val.length > field.max_items) {
+      errors.push({
+        field: name,
+        reason: `at most ${field.max_items} items`,
+      });
+    }
+    if (field.min_items !== undefined && val.length < field.min_items) {
+      errors.push({
+        field: name,
+        reason: `at least ${field.min_items} items`,
+      });
+    }
   }
 
+  // Nested object recursion. `field.fields` declares a structured
+  // sub-object; with `repeatable: true` the wire value is an array of
+  // such objects. Errors carry a dotted path like
+  // "groups[1].prompt: required" so callers see the offending row.
+  // `ui.show_when` is deliberately NOT honoured at validation time —
+  // it's a UI hint only; conditionally-hidden fields are still
+  // subject to the same checks if a client sends them.
+  if (field.fields) {
+    if (field.repeatable) {
+      if (!Array.isArray(val)) {
+        errors.push({
+          field: name,
+          reason: `expected array of objects, got ${describeType(val)}`,
+        });
+      } else {
+        val.forEach((item, i) => {
+          if (typeof item !== "object" || item === null || Array.isArray(item)) {
+            errors.push({
+              field: `${name}[${i}]`,
+              reason: `expected object, got ${describeType(item)}`,
+            });
+            return;
+          }
+          errors.push(...validateObject(`${name}[${i}]`, field.fields!, item as Record<string, unknown>));
+        });
+      }
+    } else {
+      if (typeof val !== "object" || val === null || Array.isArray(val)) {
+        errors.push({
+          field: name,
+          reason: `expected object, got ${describeType(val)}`,
+        });
+      } else {
+        errors.push(...validateObject(name, field.fields, val as Record<string, unknown>));
+      }
+    }
+  }
+
+  return errors;
+}
+
+/** validateObject runs per-field validation against a sub-schema's
+ *  `fields` map for one object value. Errors return with
+ *  `<pathPrefix>.<innerName>` so the caller sees the full nested path. */
+function validateObject(
+  pathPrefix: string,
+  fields: Record<string, FieldSchema>,
+  obj: Record<string, unknown>,
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  for (const [innerName, innerField] of Object.entries(fields)) {
+    const childPath = `${pathPrefix}.${innerName}`;
+    const val = obj[innerName];
+    const set = innerName in obj;
+    if (set && !isEmpty(val)) {
+      errors.push(...validateFieldValue(childPath, innerField, val));
+    }
+    errors.push(...validatePresence(childPath, innerField, val, set));
+  }
   return errors;
 }
 
@@ -137,18 +215,24 @@ function validateConstraint(
     }
 
     case "group_mutex": {
-      const groups = c.groups ?? [];
-      const activeGroups: string[][] = [];
+      // Best-effort: enforce only the anonymous "at most one group
+      // active" rule for both shapes. The strict discriminator-based
+      // check (validating `c.name`'s value + rejecting non-active
+      // group fields) lives in the gateway only — SDK validation
+      // stays a fast pre-flight hint, not a contract enforcer, so we
+      // avoid doubling the maintenance surface across SDKs.
+      const groups: Group[] = normalizeGroups(c.groups);
+      const activeGroups: Group[] = [];
       const activeFields: string[] = [];
       for (const g of groups) {
-        const setHere = g.filter((f) => f in req && !isEmpty(req[f]));
+        const setHere = g.fields.filter((f) => f in req && !isEmpty(req[f]));
         if (setHere.length > 0) {
           activeGroups.push(g);
           activeFields.push(...setHere);
         }
       }
       if (activeGroups.length > 1) {
-        const labels = groups.map((g) => `[${g.join("+")}]`).join(" or ");
+        const labels = groups.map((g) => `[${g.fields.join("+")}]`).join(" or ");
         return [
           {
             field: activeFields.join("/"),

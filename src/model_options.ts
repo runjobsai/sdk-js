@@ -37,8 +37,20 @@ export interface FieldSchema {
   default?: unknown;
   enum?: unknown[];
   max_items?: number;
+  /** Lower-bound counterpart of max_items. Applies to array types
+   *  AND `repeatable` object groups. Nil = no minimum. */
+  min_items?: number;
   /** Semantic hint for media-input fields. */
   role?: "source" | "reference" | "motion";
+  /** When present, this field is a structured sub-object. The wire
+   *  value is `{<inner-name>: <value>, ...}` matching this inner
+   *  schema; renderers recurse into it. With `repeatable: true` the
+   *  wire value becomes an array of such objects (e.g. multi-utterance
+   *  TTS "+ add another group"). */
+  fields?: Record<string, FieldSchema>;
+  /** Pairs with `fields`: array-of-objects rather than a single
+   *  nested object. Ignored when `fields` is absent. */
+  repeatable?: boolean;
 
   // ─── Display metadata — drives auto-rendered playground / form UIs.
   // All optional; renderers fall back to type/role-based rendering
@@ -67,15 +79,35 @@ export interface FieldSchema {
    *                    in image generation. When the enum includes
    *                    "adaptive" or "auto", that entry is
    *                    promoted to a row-spanning anchor block.
+   *   "tabs"         — horizontal tab strip. Same data contract as
+   *                    "radio" but a different visual. Drives
+   *                    `ui.show_when` on sibling fields.
+   *   "card_group"   — bordered card containing the field's nested
+   *                    `fields`. With `repeatable: true` the card
+   *                    becomes a "+ add another"-able stack.
    * Unknown values fall back to the type default (forward-compat).
    */
   widget?: string;
   /**
    * Nested presentational hints:
-   *   "group" (string) — sectional grouping ("main"/"advanced"/"output").
-   *   "order" (int)    — display order within the group; lower first.
+   *   "group" (string)      — sectional grouping ("main"/"advanced"/"output").
+   *   "order" (int)         — display order within the group; lower first.
+   *   "card_label" (string) — title above a card_group; "{{i}}" is
+   *                           substituted with the card index for
+   *                           repeatable groups.
+   *   "show_when" ({field, equals})
+   *                         — purely-visual conditional: hide this
+   *                           field unless a sibling's value matches.
+   *                           Validator ignores it; server still
+   *                           accepts conditionally-hidden fields.
    */
-  ui?: { group?: string; order?: number; [k: string]: unknown };
+  ui?: {
+    group?: string;
+    order?: number;
+    card_label?: string;
+    show_when?: { field: string; equals: unknown };
+    [k: string]: unknown;
+  };
 }
 
 export type ConstraintKind =
@@ -85,18 +117,54 @@ export type ConstraintKind =
   | "requires_all"
   | "pixel_bounds";
 
+export interface Group {
+  /** Stable id; also the value the discriminator field
+   *  (`Constraint.name`) takes when this group is active. */
+  name?: string;
+  /** Tab strip display label. Falls back to `name`. */
+  label?: string;
+  fields: string[];
+}
+
 export interface Constraint {
   kind: ConstraintKind;
   fields?: string[];
   /**
-   * Used by `group_mutex`: at most one group may have any field set.
-   * Fields inside the same group can co-exist.
+   * On a `group_mutex` constraint, names the discriminator field
+   * selecting which group is active. The renderer auto-injects a
+   * `tabs` input with this name (enum = group names) and gives
+   * every group member an implicit `show_when` pointing at it.
+   * When omitted, the constraint behaves as legacy anonymous-group
+   * mutex — all members render flat, mutex enforced at submit.
    */
-  groups?: string[][];
+  name?: string;
+  /**
+   * Human-readable title for the synthesized tab widget (e.g.
+   * "Animation mode"). Falls back to `name` when omitted.
+   */
+  label?: string;
+  /**
+   * Used by `group_mutex`. Wire shape is either the legacy
+   * `string[][]` (each `[a,b,...]` reads as an anonymous
+   * `{fields:[a,b,...]}` Group) or the new `Group[]`. Consumers
+   * should normalize via `normalizeGroups()` before reading.
+   */
+  groups?: Group[] | string[][];
   when?: string;
   then?: string[];
   min?: number;
   max?: number;
+}
+
+/**
+ * Normalize either legacy `string[][]` or new `Group[]` into a
+ * uniform `Group[]`. Mirror of sdk-go's `Group.UnmarshalJSON`.
+ */
+export function normalizeGroups(g: Constraint["groups"]): Group[] {
+  if (!g) return [];
+  return g.map(item =>
+    Array.isArray(item) ? { fields: item as string[] } : (item as Group),
+  );
 }
 
 export interface Catalog {
