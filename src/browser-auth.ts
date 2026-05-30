@@ -210,10 +210,7 @@ export class BrowserAuth {
   /** Public token-fetcher; pass to RunJobs as `apiKeyResolver`. */
   getToken = async (): Promise<string> => {
     if (this.tokenIsFresh()) return this.token as string;
-    if (this.parentHandshake) {
-      await this.parentHandshake;
-      if (this.tokenIsFresh()) return this.token as string;
-    }
+
     // User explicitly signed out — don't silently re-auth.  Throw so
     // the caller surfaces an unauthenticated state and can prompt the
     // user to click signIn.  Without this guard, the backend's
@@ -221,6 +218,48 @@ export class BrowserAuth {
     // (the cookie on the gateway domain is still valid).
     if (this.isSignedOut()) {
       throw new Error("RunJobs: signed out — call client.signIn() to authenticate");
+    }
+
+    // ── Embedded (cross-site iframe) path ──
+    //
+    // Inside a cross-site iframe (the dashboard's bundle embed),
+    // signIn() → /api/sdk/grant is a DEAD END: navigating the iframe to
+    // the gateway origin is a *sub-frame* navigation, so the session
+    // cookie is NOT sent (SameSite) and grant bounces to a login form
+    // the user can't complete in place.  The dashboard parent — same
+    // origin as the gateway, and it holds the cookie — is the ONLY
+    // party that can mint a token here.  So we RE-handshake with the
+    // parent on EVERY stale token (not just once at construction).
+    // This is what lets a bundle survive token expiry / revocation
+    // without ever dropping to the login screen.
+    if (this.inIframe()) {
+      try {
+        // Reuse the eager construction-time handshake on the first call
+        // (avoids a duplicate post), then consume it so later staleness
+        // (expiry / 401-invalidate) starts a fresh handshake instead.
+        if (this.parentHandshake) {
+          await this.parentHandshake;
+          this.parentHandshake = null;
+        }
+        if (!this.tokenIsFresh()) {
+          await this.requestTokenFromParent();
+        }
+      } catch {
+        /* parent slow / unreachable — fall through to the throw */
+      }
+      if (this.tokenIsFresh()) return this.token as string;
+      // Never signIn() inside an iframe (cookie-less grant dead end).
+      // Surface as unauthenticated so the bundle can retry / show state.
+      throw new Error("RunJobs: could not obtain a token from the dashboard");
+    }
+
+    // ── Top-level (own tab / window) path ──
+    //
+    // signIn() → grant works here because the cookie IS sent on a
+    // top-level navigation.
+    if (this.parentHandshake) {
+      await this.parentHandshake;
+      if (this.tokenIsFresh()) return this.token as string;
     }
     // No fresh token + can't get one silently → redirect to grant.
     // The page is about to unload; return a never-resolving Promise so
@@ -509,9 +548,11 @@ export class BrowserAuth {
   private requestTokenFromParent(): Promise<void> {
     return new Promise((resolve, reject) => {
       let done = false;
+      const timers: ReturnType<typeof setTimeout>[] = [];
       const cleanup = () => {
         done = true;
         window.removeEventListener("message", onMessage);
+        for (const t of timers) clearTimeout(t);
       };
       const onMessage = (e: MessageEvent) => {
         if (e.origin !== this.origin) return;
@@ -525,18 +566,34 @@ export class BrowserAuth {
         }
       };
       window.addEventListener("message", onMessage);
-      try {
-        window.parent.postMessage({ type: "runjobs:request-token" }, this.origin);
-      } catch (err) {
-        cleanup();
-        reject(err);
-        return;
-      }
-      setTimeout(() => {
+
+      // postMessage is NOT queued: if the parent's React listener isn't
+      // mounted at the instant of our first post, that single message is
+      // lost forever and we'd time out → dead-end grant redirect.  So
+      // re-post a few times across the wait window; a late-mounting
+      // parent still receives a request to answer.  The parent also
+      // pushes the token proactively on iframe load — belt-and-braces.
+      const post = () => {
         if (done) return;
-        cleanup();
-        reject(new Error("runjobs: parent handshake timeout"));
-      }, 3000);
+        try {
+          window.parent.postMessage({ type: "runjobs:request-token" }, this.origin);
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      };
+      post();
+      for (const d of [250, 750, 1500, 3000]) timers.push(setTimeout(post, d));
+
+      // Longer overall window (5s vs the old 3s) gives a heavy bundle +
+      // a cold parent room to complete the round trip before we give up.
+      timers.push(
+        setTimeout(() => {
+          if (done) return;
+          cleanup();
+          reject(new Error("runjobs: parent handshake timeout"));
+        }, 5000),
+      );
     });
   }
 
