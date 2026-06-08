@@ -3,6 +3,15 @@
 // materialises this from the legacy options blob at /v1/models
 // response time.
 /**
+ * Normalize either legacy `string[][]` or new `Group[]` into a
+ * uniform `Group[]`. Mirror of sdk-go's `Group.UnmarshalJSON`.
+ */
+export function normalizeGroups(g) {
+    if (!g)
+        return [];
+    return g.map(item => Array.isArray(item) ? { fields: item } : item);
+}
+/**
  * Parse the model's wire-format `options` blob into the typed Schema.
  * Returns null when the model has no options or the blob can't be
  * structurally decoded — callers fall back to whatever default

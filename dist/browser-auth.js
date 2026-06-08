@@ -584,9 +584,97 @@ function badgeCornerStyles(position) {
         popover: `${popoverVerticalAnchor};${popoverHorizontalAnchor}`,
     };
 }
+// ─── Drag-to-move + position persistence ────────────────────────────
+//
+// Users sometimes want to move the floating badge — it overlaps a
+// site's own corner UI (chat widget, footer button, etc.). Drag to
+// reposition; the saved coords land in a cookie so reloads keep the
+// chosen spot. Cookie because the user asked for cookie; localStorage
+// would be the more typical choice for ~10 bytes of UI state, but
+// cookie is fine — small payload, same-site, no SDK dependency on a
+// storage permission.
+/** Cookie key the saved badge position lives under. URI-safe, prefixed
+ *  so other libraries / consumers don't accidentally collide. */
+const BADGE_POS_COOKIE = "__runjobs_badge_pos__";
+/** Pixel threshold a pointer must travel before we treat the gesture
+ *  as a drag instead of a click. Below this, it's a normal badge tap
+ *  that opens the popover. 5 px matches OS-level click slop tolerances. */
+const BADGE_DRAG_THRESHOLD_PX = 5;
+/** Edge inset when clamping a dragged badge into the viewport — keeps
+ *  it visually inside the safe area on resize. Match the default
+ *  corner offset (`16px` in badgeCornerStyles). */
+const BADGE_EDGE_INSET_PX = 8;
+function readBadgePosCookie() {
+    if (typeof document === "undefined")
+        return null;
+    const raw = document.cookie
+        .split(";")
+        .map((s) => s.trim())
+        .find((s) => s.startsWith(BADGE_POS_COOKIE + "="));
+    if (!raw)
+        return null;
+    const value = decodeURIComponent(raw.slice(BADGE_POS_COOKIE.length + 1));
+    const parts = value.split(",");
+    const rawX = parts[0];
+    const rawY = parts[1];
+    if (parts.length !== 2 || rawX === undefined || rawY === undefined)
+        return null;
+    const x = Number.parseInt(rawX, 10);
+    const y = Number.parseInt(rawY, 10);
+    if (!Number.isFinite(x) || !Number.isFinite(y))
+        return null;
+    return { x, y };
+}
+function writeBadgePosCookie(x, y) {
+    if (typeof document === "undefined")
+        return;
+    // 1-year expiry, root path, lax cross-site so the cookie survives
+    // navigation between subdomains under the same site. Secure when
+    // we're on HTTPS so iframes can read it back without warnings.
+    const maxAge = 60 * 60 * 24 * 365;
+    const secure = typeof window !== "undefined" && window.location?.protocol === "https:" ? ";Secure" : "";
+    document.cookie =
+        `${BADGE_POS_COOKIE}=${encodeURIComponent(`${Math.round(x)},${Math.round(y)}`)};` +
+            `path=/;max-age=${maxAge};SameSite=Lax${secure}`;
+}
+/** Snap (x, y) into the viewport so a saved position from a wider
+ *  screen doesn't render off-canvas after a window resize.
+ *  Coordinates are top-left of the badge element; w/h are its bounds. */
+function clampToViewport(x, y, w, h) {
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 768;
+    const maxX = Math.max(BADGE_EDGE_INSET_PX, vw - w - BADGE_EDGE_INSET_PX);
+    const maxY = Math.max(BADGE_EDGE_INSET_PX, vh - h - BADGE_EDGE_INSET_PX);
+    return {
+        x: Math.min(Math.max(BADGE_EDGE_INSET_PX, x), maxX),
+        y: Math.min(Math.max(BADGE_EDGE_INSET_PX, y), maxY),
+    };
+}
+/** Recompute the popover anchor CSS based on which quadrant of the
+ *  viewport the badge currently sits in. Mirrors badgeCornerStyles'
+ *  rule: popover grows AWAY from the nearer edge so it never escapes
+ *  the viewport. Used after a drag so the popover keeps opening
+ *  inward even when the badge is no longer in its starting corner. */
+function popoverCssForRect(rect) {
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 768;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const verticalAnchor = cy < vh / 2
+        ? "top:calc(100% + 8px);bottom:auto"
+        : "bottom:calc(100% + 8px);top:auto";
+    const horizontalAnchor = cx < vw / 2 ? "left:0;right:auto" : "right:0;left:auto";
+    return `${verticalAnchor};${horizontalAnchor}`;
+}
 function mountActivityBadge(opts) {
     const { id, user, dashboardUrl, tracker, position, onSignOut } = opts;
     const corners = badgeCornerStyles(position);
+    // `currentPopoverCss` starts at the corner-derived anchor and gets
+    // overwritten when the user drags the badge to a new quadrant.
+    // createPopover() reads this at popover instantiation time; if the
+    // popover was already built before a drag, the drag handler also
+    // patches popover.style directly so the next open uses the new anchor.
+    let currentPopoverCss = corners.popover;
     // Inject the LED pulse keyframes at mount time. Previously this
     // lived inside createPopover() — which only runs on first hover —
     // so the LED's `animation` CSS referenced a keyframe rule that
@@ -754,7 +842,7 @@ function mountActivityBadge(opts) {
             return;
         }
         if (!popover) {
-            popover = createPopover(dashboardUrl, corners.popover, () => {
+            popover = createPopover(dashboardUrl, currentPopoverCss, () => {
                 // Tear down our DOM before the auth flip runs so the popover
                 // doesn't briefly show "signed out" state to a user who's
                 // about to navigate away.  closePopover() also removes the
@@ -811,6 +899,155 @@ function mountActivityBadge(opts) {
         if (popoverOpen && !el.contains(e.target))
             closePopover();
     });
+    // ─── Drag-to-move + cookie persistence ─────────────────────
+    //
+    // Two intents share the pointer-down on the badge:
+    //   1. Quick tap → open popover (existing click handler).
+    //   2. Hold-and-drag → reposition the badge.
+    //
+    // Disambiguate by movement distance: until the pointer travels
+    // BADGE_DRAG_THRESHOLD_PX from its starting point we treat the
+    // gesture as a pending click and let the existing click handler
+    // run on pointerup. Past that threshold we flip to drag mode —
+    // start moving the badge, claim the pointer via setPointerCapture
+    // so we keep getting moves even when the pointer leaves the badge
+    // bounds, and on pointerup persist the final coords + suppress
+    // the click event the browser would otherwise synthesize.
+    let dragStartClientX = 0;
+    let dragStartClientY = 0;
+    let dragStartBadgeLeft = 0;
+    let dragStartBadgeTop = 0;
+    let pointerDown = false;
+    let isDragging = false;
+    let suppressNextClick = false;
+    /** Apply absolute pixel position to the badge, clearing the corner
+     *  anchors set at mount. Used both by the drag handler (live update)
+     *  and the cookie-restore path (mount-time hydrate). */
+    const applyAbsolutePos = (x, y) => {
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        el.style.right = "auto";
+        el.style.bottom = "auto";
+    };
+    /** Recompute + apply the popover anchor based on the badge's current
+     *  position in the viewport. Called after a drag so the popover
+     *  always grows away from the nearest viewport edge. If the popover
+     *  was already instantiated, patches its inline style in place. */
+    const recomputePopoverAnchor = () => {
+        const r = el.getBoundingClientRect();
+        currentPopoverCss = popoverCssForRect({
+            left: r.left,
+            top: r.top,
+            width: r.width,
+            height: r.height,
+        });
+        if (popover) {
+            // Reset the four anchor properties before re-applying so we
+            // don't leave stale `right` / `bottom` declarations stuck on
+            // the element from the previous anchor.
+            popover.style.top = "";
+            popover.style.bottom = "";
+            popover.style.left = "";
+            popover.style.right = "";
+            for (const decl of currentPopoverCss.split(";")) {
+                const [prop, val] = decl.split(":");
+                if (prop && val)
+                    popover.style.setProperty(prop.trim(), val.trim());
+            }
+        }
+    };
+    el.addEventListener("pointerdown", (e) => {
+        // Only the primary button drags — secondary clicks should fall
+        // through (browsers may show a context menu, etc.).
+        if (e.button !== 0)
+            return;
+        pointerDown = true;
+        isDragging = false;
+        dragStartClientX = e.clientX;
+        dragStartClientY = e.clientY;
+        const r = el.getBoundingClientRect();
+        dragStartBadgeLeft = r.left;
+        dragStartBadgeTop = r.top;
+    });
+    el.addEventListener("pointermove", (e) => {
+        if (!pointerDown)
+            return;
+        const dx = e.clientX - dragStartClientX;
+        const dy = e.clientY - dragStartClientY;
+        if (!isDragging) {
+            if (Math.abs(dx) < BADGE_DRAG_THRESHOLD_PX && Math.abs(dy) < BADGE_DRAG_THRESHOLD_PX) {
+                return; // still within click slop — keep treating as a tap
+            }
+            // Cross the threshold → enter drag mode. Capture the pointer
+            // so further moves arrive even when the pointer escapes the
+            // badge bounds (fast drags leave the small pill quickly).
+            isDragging = true;
+            el.setPointerCapture(e.pointerId);
+            el.style.cursor = "grabbing";
+            // Pre-emptively close any open popover — keeping it pinned to a
+            // moving badge looks janky and a drag is clearly a different
+            // intent than "look at the popover".
+            if (popoverOpen)
+                closePopover();
+        }
+        const rect = el.getBoundingClientRect();
+        const clamped = clampToViewport(dragStartBadgeLeft + dx, dragStartBadgeTop + dy, rect.width, rect.height);
+        applyAbsolutePos(clamped.x, clamped.y);
+    });
+    const endDrag = (e) => {
+        if (!pointerDown)
+            return;
+        pointerDown = false;
+        if (!isDragging)
+            return;
+        isDragging = false;
+        el.style.cursor = "pointer";
+        if (el.hasPointerCapture(e.pointerId))
+            el.releasePointerCapture(e.pointerId);
+        // Persist final position. Re-read the rect so what we store is
+        // exactly what's on screen — clampToViewport may have shaved
+        // the trailing few pixels.
+        const r = el.getBoundingClientRect();
+        writeBadgePosCookie(r.left, r.top);
+        recomputePopoverAnchor();
+        // The browser will synthesize a click on the badge from this
+        // pointer sequence (pointer went down + up on the same element).
+        // Swallow it so a drag doesn't immediately open the popover.
+        suppressNextClick = true;
+    };
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+    // Capture-phase click swallower — runs BEFORE the existing click
+    // handler that toggles the popover, so we can stop a drag-tail
+    // click without modifying the open/close logic itself.
+    el.addEventListener("click", (e) => {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
+    // Hydrate from cookie. After all the listeners and the corner-based
+    // default style are in place, fast-forward to the user's last saved
+    // position if any. Clamp to the current viewport so a saved spot
+    // from a wider monitor doesn't put the badge off-canvas.
+    const savedPos = readBadgePosCookie();
+    if (savedPos) {
+        // We need el's measured size to clamp; but el isn't in the DOM
+        // yet, so we lean on a defer to next frame after first append.
+        // Until then, apply the raw saved coords (the corner-default
+        // styles still apply if these are absurd; clamp will fix it).
+        applyAbsolutePos(savedPos.x, savedPos.y);
+        // Queue a one-shot post-mount clamp + popover-anchor recompute.
+        // requestAnimationFrame fires after the parent appendChild
+        // brings the badge into layout, so getBoundingClientRect works.
+        requestAnimationFrame(() => {
+            const r = el.getBoundingClientRect();
+            const clamped = clampToViewport(savedPos.x, savedPos.y, r.width, r.height);
+            applyAbsolutePos(clamped.x, clamped.y);
+            recomputePopoverAnchor();
+        });
+    }
     // ─── Redraw loop ───────────────────────────────────────────
     //
     // Idle: zero work. Active OR popover open: redraw at ~6 Hz so
