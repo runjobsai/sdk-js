@@ -536,7 +536,20 @@ export class BrowserAuth {
                 // BrowserAuth.signOut (clears token cache + flips signed-out
                 // flag + dispatches the auth event); a plain method reference
                 // would lose `this`.
-                onSignOut: () => this.signOut(),
+                //
+                // Then hard-reload the page. signOut() deliberately doesn't
+                // navigate (its contract leaves that to the host bundle), but
+                // the badge IS the SDK's own UI, and a user clicking its
+                // "Sign out" expects to land back on the app's signed-out /
+                // login view — not keep staring at a now-stale authed page.
+                // The reload re-runs the bundle's bootstrap against a cleared
+                // token + the sticky signed-out flag, so the app naturally
+                // shows its login state. Guard window for non-browser hosts.
+                onSignOut: () => {
+                    this.signOut();
+                    if (typeof window !== "undefined")
+                        window.location.reload();
+                },
             });
             document.body.appendChild(root);
         });
