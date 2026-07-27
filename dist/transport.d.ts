@@ -51,6 +51,20 @@ export declare class Transport {
      * `onUnauthorized` is absent or already retried.
      */
     private fetchWithAuthRetry;
+    /**
+     * Every request goes out uncacheable.
+     *
+     * Our identity lives in the Authorization header, never in the URL — so
+     * two different apps calling e.g. `/v1/files/projects/index.json` hit the
+     * *same* URL with different tokens.  The browser's HTTP cache doesn't key
+     * on request headers, and it is partitioned by the top-level registrable
+     * domain, which every `*.runjobs.dev` bundle shares.  One cacheable
+     * response was therefore enough for app A to read app B's file and then
+     * save it back as its own.  The server no longer marks these cacheable;
+     * this is the client-side half of that fix, and it also protects bundles
+     * pinned to an older backend.
+     */
+    private buildInit;
     /** POST JSON body; parse JSON response. */
     postJSON<T>(path: string, body: unknown, init?: {
         signal?: AbortSignal;

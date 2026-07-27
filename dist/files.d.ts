@@ -79,7 +79,25 @@ export interface BatchResult {
 }
 export declare class FilesService {
     private readonly transport;
-    constructor(transport: Transport);
+    /**
+     * URL prefix for every file call.
+     *
+     * When the client was constructed with `project`, requests go to the
+     * project-scoped form — `/v1/p/<project>/files/...` — instead of the
+     * bare `/v1/files/...`.
+     *
+     * This matters because the unscoped URL is byte-identical across apps:
+     * two bundles built from the same template both read
+     * `projects/index.json`, so anything keying on URL alone (starting
+     * with the browser's HTTP cache, which ignores request headers and is
+     * partitioned by registrable domain, not by subdomain) cannot tell
+     * them apart.  Putting the project in the path makes the URL unique
+     * per app.  The gateway still authorizes purely from the token and
+     * rejects a scope that disagrees with it, so this is a correctness
+     * measure, not a permission one.
+     */
+    private readonly base;
+    constructor(transport: Transport, project?: string);
     /**
      * Upload `body` to `path`.  Returns the resulting FileObject — its
      * `url` is the stable public address for that path.

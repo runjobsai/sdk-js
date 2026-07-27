@@ -37,7 +37,7 @@ export class Transport {
      */
     async fetchWithAuthRetry(path, build) {
         const url = this.baseURL + path;
-        let resp = await this.fetchImpl(url, await build());
+        let resp = await this.fetchImpl(url, await this.buildInit(build));
         if (resp.status !== 401 || !this.onUnauthorized)
             return resp;
         try {
@@ -47,8 +47,25 @@ export class Transport {
             // Hook bailed out — surface the original 401.
             return resp;
         }
-        resp = await this.fetchImpl(url, await build());
+        resp = await this.fetchImpl(url, await this.buildInit(build));
         return resp;
+    }
+    /**
+     * Every request goes out uncacheable.
+     *
+     * Our identity lives in the Authorization header, never in the URL — so
+     * two different apps calling e.g. `/v1/files/projects/index.json` hit the
+     * *same* URL with different tokens.  The browser's HTTP cache doesn't key
+     * on request headers, and it is partitioned by the top-level registrable
+     * domain, which every `*.runjobs.dev` bundle shares.  One cacheable
+     * response was therefore enough for app A to read app B's file and then
+     * save it back as its own.  The server no longer marks these cacheable;
+     * this is the client-side half of that fix, and it also protects bundles
+     * pinned to an older backend.
+     */
+    async buildInit(build) {
+        const init = await build();
+        return init.cache ? init : { ...init, cache: "no-store" };
     }
     /** POST JSON body; parse JSON response. */
     async postJSON(path, body, init) {

@@ -6,14 +6,35 @@
 // The bundle's RunJobs client uses `client.files` to access these
 // endpoints; the underlying token must be a project-bound resource
 // token (rrt_*) issued by the grant flow.
-function pathToURL(p) {
+function pathToURL(base, p) {
     const trimmed = p.replace(/^\/+/, "");
-    return "/v1/files/" + trimmed.split("/").map(encodeURIComponent).join("/");
+    return base + "/" + trimmed.split("/").map(encodeURIComponent).join("/");
 }
 export class FilesService {
     transport;
-    constructor(transport) {
+    /**
+     * URL prefix for every file call.
+     *
+     * When the client was constructed with `project`, requests go to the
+     * project-scoped form — `/v1/p/<project>/files/...` — instead of the
+     * bare `/v1/files/...`.
+     *
+     * This matters because the unscoped URL is byte-identical across apps:
+     * two bundles built from the same template both read
+     * `projects/index.json`, so anything keying on URL alone (starting
+     * with the browser's HTTP cache, which ignores request headers and is
+     * partitioned by registrable domain, not by subdomain) cannot tell
+     * them apart.  Putting the project in the path makes the URL unique
+     * per app.  The gateway still authorizes purely from the token and
+     * rejects a scope that disagrees with it, so this is a correctness
+     * measure, not a permission one.
+     */
+    base;
+    constructor(transport, project) {
         this.transport = transport;
+        this.base = project
+            ? "/v1/p/" + encodeURIComponent(project) + "/files"
+            : "/v1/files";
     }
     /**
      * Upload `body` to `path`.  Returns the resulting FileObject — its
@@ -24,7 +45,7 @@ export class FilesService {
      * ReadableStream, or a string.
      */
     async put(path, body, opts) {
-        return this.transport.putBytes(pathToURL(path), body, {
+        return this.transport.putBytes(pathToURL(this.base, path), body, {
             contentType: opts?.contentType,
             headers: opts?.ifNoneMatch ? { "If-None-Match": "*" } : undefined,
             signal: opts?.signal,
@@ -44,12 +65,12 @@ export class FilesService {
      * `.url` directly instead — that's a stable public URL with no token.
      */
     async get(path, init) {
-        const { data, contentType } = await this.transport.getRaw(pathToURL(path), init);
+        const { data, contentType } = await this.transport.getRaw(pathToURL(this.base, path), init);
         return new Blob([new Uint8Array(data)], { type: contentType || "application/octet-stream" });
     }
     /** Stat: HEAD-only object metadata. */
     async stat(path, init) {
-        const { status, headers } = await this.transport.head(pathToURL(path), init);
+        const { status, headers } = await this.transport.head(pathToURL(this.base, path), init);
         if (status === 404) {
             throw Object.assign(new Error("not found"), { status: 404 });
         }
@@ -67,12 +88,12 @@ export class FilesService {
     }
     /** Returns true iff the path resolves to an existing object. */
     async exists(path, init) {
-        const { status } = await this.transport.head(pathToURL(path), init);
+        const { status } = await this.transport.head(pathToURL(this.base, path), init);
         return status >= 200 && status < 400;
     }
     /** Delete the object at `path`.  Idempotent. */
     async del(path, init) {
-        await this.transport.deletePath(pathToURL(path), init);
+        await this.transport.deletePath(pathToURL(this.base, path), init);
     }
     /** List objects.  Pass an empty / omitted prefix for the root. */
     async list(opts) {
@@ -86,7 +107,7 @@ export class FilesService {
         if (opts?.glob)
             params.set("glob", opts.glob);
         const qs = params.toString();
-        return this.transport.getJSON("/v1/files" + (qs ? "?" + qs : ""), opts?.signal ? { signal: opts.signal } : undefined);
+        return this.transport.getJSON(this.base + (qs ? "?" + qs : ""), opts?.signal ? { signal: opts.signal } : undefined);
     }
     /**
      * Bulk delete: removes every object whose path starts with `prefix`
@@ -99,15 +120,15 @@ export class FilesService {
      *   client.files.deleteMany({ prefix: "logs/", glob: "*.bak" })
      */
     async deleteMany(opts, init) {
-        return this.transport.postJSON("/v1/files/delete", { prefix: opts.prefix ?? "", glob: opts.glob ?? "" }, init);
+        return this.transport.postJSON(this.base + "/delete", { prefix: opts.prefix ?? "", glob: opts.glob ?? "" }, init);
     }
     /** Atomic rename (copy + delete server-side). */
     async move(from, to, init) {
-        return this.transport.postJSON("/v1/files/move", { from, to }, init);
+        return this.transport.postJSON(this.base + "/move", { from, to }, init);
     }
     /** Server-side copy. */
     async copy(from, to, init) {
-        return this.transport.postJSON("/v1/files/copy", { from, to }, init);
+        return this.transport.postJSON(this.base + "/copy", { from, to }, init);
     }
     /**
      * Ask the gateway to fetch `srcURL` and store the body at `path`.
@@ -115,7 +136,7 @@ export class FilesService {
      * must be a public http(s) URL (private/loopback hosts rejected).
      */
     async putFromURL(path, srcURL, opts) {
-        return this.transport.postJSON("/v1/files/put-url", {
+        return this.transport.postJSON(this.base + "/put-url", {
             path,
             src_url: srcURL,
             content_type: opts?.contentType,
@@ -139,13 +160,13 @@ export class FilesService {
             return [];
         const chunkSize = 30;
         if (ops.length <= chunkSize) {
-            const resp = await this.transport.postJSON("/v1/files/batch", { ops }, init);
+            const resp = await this.transport.postJSON(this.base + "/batch", { ops }, init);
             return resp.results;
         }
         const all = [];
         for (let i = 0; i < ops.length; i += chunkSize) {
             const chunk = ops.slice(i, i + chunkSize);
-            const resp = await this.transport.postJSON("/v1/files/batch", { ops: chunk }, init);
+            const resp = await this.transport.postJSON(this.base + "/batch", { ops: chunk }, init);
             all.push(...resp.results);
         }
         return all;

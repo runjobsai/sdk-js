@@ -216,7 +216,10 @@ export class RunJobs {
     this.audio = new AudioService(transport, this.events);
     this.video = new VideoService(transport, this.events);
     this.computer = new ComputerService(transport, this.events);
-    this.files = new FilesService(transport);
+    // `project` also scopes the file URLs (/v1/p/<project>/files/...),
+    // so two apps never issue byte-identical file requests.  Omitted →
+    // legacy unscoped /v1/files/... paths.
+    this.files = new FilesService(transport, options.project);
     this.embeddings = new EmbeddingsService(transport, this.events);
   }
 
