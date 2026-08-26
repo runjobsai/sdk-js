@@ -1,4 +1,5 @@
 import { wrapEvents, wrapStream } from "./event-wrap.js";
+import { APIError } from "./errors.js";
 /** Typed constants for {@link ServerToolName} so you get autocomplete. */
 export const ServerTools = {
     WebSearch: "web_search",
@@ -127,12 +128,23 @@ async function* parseSSE(body) {
                     return;
                 if (!data)
                     continue;
+                let parsed;
                 try {
-                    yield JSON.parse(data);
+                    parsed = JSON.parse(data);
                 }
                 catch (e) {
                     throw new Error(`runjobs: decode stream chunk: ${e.message}`);
                 }
+                // The gateway reports mid-stream failures as an SSE error event
+                // (`data: {"error":{...}}`) followed by [DONE]. Such an event has no
+                // "choices", so without this it would surface as an empty chunk and
+                // the stream would end looking merely empty.
+                const err = parsed
+                    .error;
+                if (err) {
+                    throw new APIError(err.code ?? 0, err.type ?? "upstream_error", err.message ?? data);
+                }
+                yield parsed;
             }
         }
     }

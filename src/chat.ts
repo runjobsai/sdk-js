@@ -2,6 +2,7 @@ import type { Transport } from "./transport.js";
 import type { Usage } from "./types.js";
 import type { SDKEvents } from "./events.js";
 import { wrapEvents, wrapStream } from "./event-wrap.js";
+import { APIError } from "./errors.js";
 
 /* ------------------------------------------------------------------ */
 /* Request types                                                       */
@@ -328,13 +329,28 @@ async function* parseSSE<T>(
         const data = line.slice(6).trim();
         if (data === "[DONE]") return;
         if (!data) continue;
+        let parsed: unknown;
         try {
-          yield JSON.parse(data) as T;
+          parsed = JSON.parse(data);
         } catch (e) {
           throw new Error(
             `runjobs: decode stream chunk: ${(e as Error).message}`,
           );
         }
+        // The gateway reports mid-stream failures as an SSE error event
+        // (`data: {"error":{...}}`) followed by [DONE]. Such an event has no
+        // "choices", so without this it would surface as an empty chunk and
+        // the stream would end looking merely empty.
+        const err = (parsed as { error?: { code?: number; type?: string; message?: string } })
+          .error;
+        if (err) {
+          throw new APIError(
+            err.code ?? 0,
+            err.type ?? "upstream_error",
+            err.message ?? data,
+          );
+        }
+        yield parsed as T;
       }
     }
   } finally {
